@@ -1,0 +1,1 @@
+cmd_/home/ghonman2/workspace/work/drive/modules.order := {   echo /home/ghonman2/workspace/work/drive/mbswap.ko;   echo /home/ghonman2/workspace/work/drive/sib.ko; :; } | awk '!x[$$0]++' - > /home/ghonman2/workspace/work/drive/modules.order

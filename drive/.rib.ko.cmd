@@ -1,0 +1,1 @@
+cmd_/home/ghonman2/workspace/work/drive/rib.ko := ld -r -m elf_x86_64  --build-id=sha1  -T scripts/module.lds -o /home/ghonman2/workspace/work/drive/rib.ko /home/ghonman2/workspace/work/drive/rib.o /home/ghonman2/workspace/work/drive/rib.mod.o;  true

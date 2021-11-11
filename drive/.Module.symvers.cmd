@@ -1,0 +1,1 @@
+cmd_/home/ghonman2/workspace/work/drive/Module.symvers := sed 's/ko$$/o/' /home/ghonman2/workspace/work/drive/modules.order | scripts/mod/modpost -m    -o /home/ghonman2/workspace/work/drive/Module.symvers -e -i Module.symvers   -T -

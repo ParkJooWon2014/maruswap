@@ -1,0 +1,1 @@
+cmd_/home/ghonman2/workspace/work/drive/ib.ko := ld -r -m elf_x86_64  --build-id=sha1  -T scripts/module.lds -o /home/ghonman2/workspace/work/drive/ib.ko /home/ghonman2/workspace/work/drive/ib.o /home/ghonman2/workspace/work/drive/ib.mod.o;  true
