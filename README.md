@@ -6,14 +6,21 @@ This Maruswap.
 
 ## server 
 
-how to config Server ?? 
+how to use Server ?? 
 
+	make
+	cd server
+	./server 
 
+how t
 
-	vi ./include/config 
 
 
 ```
+
+vi ./include/config 
+
+
 
 #define CONFIG_SERVER_IP "10.10.1.13"
 #define CONFIG_SERVER_PORT 50000
@@ -27,9 +34,6 @@ enum {
 
 ```
 
-	make 
-
-to build maruswap.
 
 
 
