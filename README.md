@@ -8,13 +8,12 @@ This Maruswap.
 
 how to config Server ?? 
 
-'''
 
-vi ./include/config 
 
-'''
+	vi ./include/config 
 
-'''c
+
+```
 
 #define CONFIG_SERVER_IP "10.10.1.13"
 #define CONFIG_SERVER_PORT 50000
@@ -26,7 +25,7 @@ enum {
 	PRE_ALLOC_MEMBLOCK =  30,
 };
 
-'''
+```
 
 	make 
 
