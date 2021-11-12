@@ -30,7 +30,7 @@ enum {
 First you should modified those config. ``` MULTICAST_IP ```  and ``` MY_ADDR ``` should be modified.  
 -``` MULTICAST_IP ```  is IP to join multicast group. If you join multicast , You should same IP. ```MY_ADDR``` is your InfiniBand IP using ```ib_ipoib``` . Before build maruswap, check ```lsmod | grep ib_ipoib```. 
 
--``` PRE_ALLOC_MEMBLOCK``` decides number of memblock allocated when make connection to client. And build and use it!.
+-``` PRE_ALLOC_MEMBLOCK``` decides number of memblock allocated when make connection to client. And build and use it!. defualt server port is 50000.
 
 	make
 	cd server
