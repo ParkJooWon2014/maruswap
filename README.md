@@ -1,9 +1,6 @@
 # Maruswap
 
 
-This Maruswap. 
-
-
 ## Far memory server (far memory node)
 
 To build and run the far memory server do:
