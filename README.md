@@ -1,4 +1,4 @@
-# maruswap
+# Maruswap
 
 
 This Maruswap. 
@@ -36,6 +36,6 @@ First you should modified those config. ``` MULTICAST_IP ```  and ``` MY_ADDR ``
 	cd server
 	./server -p $(serverport)
 
-## maruswap (Clinet node)
+## MARUswap driver (Clinet node)
 
 
