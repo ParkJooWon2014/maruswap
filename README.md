@@ -1,39 +1,38 @@
-# maruswap
+# Maruswap
 
 
-This Maruswap. 
+## Far memory server (far memory node)
 
+To build and run the far memory server do:
 
-## server 
-
-how to config Server ?? 
-
-'''
-
+```
 vi ./include/config 
+``` 
 
-'''
 
-'''c
+```
 
-#define CONFIG_SERVER_IP "10.10.1.13"
-#define CONFIG_SERVER_PORT 50000
+#define CONFIG_SERVER_IP "10.10.1.13".  // Destination to msg server
+#define CONFIG_SERVER_PORT 50000	//  server Port
 #define CONFIG_MULTI_IP "10.10.1.13"
 #define MY_ADDR "10.10.1.12"
 
 enum {
-	NR_RECVER = 1,
+	NR_THREAD  = 1,
 	PRE_ALLOC_MEMBLOCK =  30,
 };
 
-'''
+```
 
-	make 
+First you should modified those config. ``` MULTICAST_IP ```  and ``` MY_ADDR ``` should be modified.  
+-``` MULTICAST_IP ```  is IP to join multicast group. If you join multicast , You should same IP. ```MY_ADDR``` is your InfiniBand IP using ```ib_ipoib``` . Before build maruswap, check ```lsmod | grep ib_ipoib```. 
 
-to build maruswap.
+-``` PRE_ALLOC_MEMBLOCK``` decides number of memblock allocated when make connection to client. And build and use it!. defualt server port is 50000.
+
+	make
+	cd server
+	./server -p $(serverport)
+
+## MARUswap driver (Clinet node)
 
 
-
-1. first Change ''' MY_ADDR ''' to your Infiniband ip_addr. If you don't know ip, Use command 'ip addr'.Or you maybe forget 'modprobe ib_ipoib'
-
-2.
