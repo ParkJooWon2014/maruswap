@@ -338,7 +338,7 @@ struct rdma_memory_handler_t *alloc_rdma_memory_handler(struct rdma_cm_event *ev
 					.sg_list = &rw->sg_list,
 					.num_sge = 1,
 				},
-				//.convey = false,
+				.convey = false,
 		};
 
 		if (ibv_post_recv(rmh->rdma->qp, &rw->wr, &bad_wr)) {

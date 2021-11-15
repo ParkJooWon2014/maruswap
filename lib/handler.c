@@ -105,8 +105,9 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 				pthread_mutex_unlock(&rmh->memblock_lock);
 				break;
 			}
-			rw->convey = false;
 		}
+
+		rw->convey = false;
 		ib_putback_recv_work(mmh->multicast->qp,(struct recv_work*)wc->wr_id);
 		list_del_init(&rw->list);
 	}
