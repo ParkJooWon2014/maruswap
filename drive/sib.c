@@ -937,7 +937,7 @@ int ib_rpc_open_all(u64 roffset)
 	return ret;
 }
 
-static void free_addr(struct rdma_ctrl_t *rdma_ctrl)
+void free_addr(struct rdma_ctrl_t *rdma_ctrl)
 {
 	unsigned long  offset = 0 ;
 	void* ret = NULL ;
@@ -966,7 +966,7 @@ int ib_rpc_commit(struct rdma_ctrl_t *rdma_ctrl)
 	int ret = 0;
 	pr_info("%s",__func__);
 	ret = ib_rpc_commit_unlocked(rdma_ctrl);
-	free_addr(rdma_ctrl);
+	//free_addr(rdma_ctrl);
 
 	return ret;
 }
@@ -990,7 +990,7 @@ int ib_rpc_commit_all(void)
 	rdma_ctrl = get_main_rdma_ctrl();
 
 	//spin_lock_irq(rdma_ctrl->spinlock);
-	free_addr(rdma_ctrl);
+	//free_addr(rdma_ctrl);
 	atomic_set(rdma_ctrl->batch,0);
 	clear_stage_buffer_addr(rdma_ctrl->stage_buffer);
 	//spin_unlock_irq(rdma_ctrl->spinlock);
@@ -1262,10 +1262,10 @@ int mbswap_multicast_write(struct page *page, u64 roffset)
 	}
 	spin_unlock_irqrestore(rdma_ctrl->spinlock,flags); 
 	//recommand : spinlock variable sched_ yield reschled (?) cond_reschled--> just sleep little bit: 	
-	xa_store(rdma_ctrl->check_list,offset,rdma_ctrl,GFP_KERNEL);
+	//xa_store(rdma_ctrl->check_list,offset,rdma_ctrl,GFP_KERNEL);
 	check = xa_load(rdma_ctrl->read_list,offset);	// OUT_ XARRAY by Synchroniztion level :  TEST
 
-		stage_buffer_store(rdma_ctrl->stage_buffer,page,offset,index);
+	stage_buffer_store(rdma_ctrl->stage_buffer,page,offset,index);
 	if(check){										
 		pr_info("something wrong....in write\n");
 		xa_erase(rdma_ctrl->check_list,offset);
@@ -1314,16 +1314,17 @@ int mbswap_rdma_read(struct page *page, u64 roffset)
 		pr_err("Unable to get page for dma\n");
 		return ret;
 	}
-	cond_resched();
-	check = xa_load(rdma_ctrl->check_list,offset);
-	
+	//cond_resched();
+	//check = xa_load(rdma_ctrl->check_list,offset);
+	check = stage_buffer_load(rdma_ctrl->stage_buffer,page,roffset);
+	xa_store(rdma_ctrl->read_list,offset,rdma_ctrl,GFP_KERNEL);
+
 	if(check){
-		xa_store(rdma_ctrl->read_list,offset,rdma_ctrl,GFP_KERNEL);
-		check = stage_buffer_load(rdma_ctrl->stage_buffer,page,roffset);
-		if(check){
-			ib_dma_unmap_page(rdma_ctrl->rdma->qp->device, dma, 
-					PAGE_SIZE, DMA_FROM_DEVICE);
-		}
+//		check = stage_buffer_load(rdma_ctrl->stage_buffer,page,roffset);
+	//	if(check){
+		ib_dma_unmap_page(rdma_ctrl->rdma->qp->device, dma, 
+				PAGE_SIZE, DMA_FROM_DEVICE);
+	//	}
 	}
 
 
@@ -1333,7 +1334,6 @@ int mbswap_rdma_read(struct page *page, u64 roffset)
 			pr_err("Unable to rdma send");
 		}
 	}
-
 
 	xa_erase(rdma_ctrl->read_list,offset);
 

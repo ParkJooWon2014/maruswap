@@ -81,7 +81,6 @@ static bool ib_convey_page(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
 	return true;
 }
 
-
 static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct ibv_wc *_wc)
 {
 	struct multicast_memory_handler_t *mmh = rmh->multicast_memory_handler; 
@@ -97,7 +96,6 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 		debug("FFUCKK\n");
 		assert(1);
 	}
-	//pthread_mutex_lock(&rmh->memblock_lock);
 	pthread_spin_lock(&mmh->lock);
 	list_for_each_entry_safe(rw,safe,&mmh->commit_list,list){
 		struct ibv_wc *wc = &rw->wc;
@@ -108,12 +106,10 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 				break;
 			}
 			rw->convey = false;
-//			count++;
 		}
 		ib_putback_recv_work(mmh->multicast->qp,(struct recv_work*)wc->wr_id);
 		list_del_init(&rw->list);
 	}
-	//pthread_mutex_unlock(&rmh->memblock_lock);
 	pthread_spin_unlock(&mmh->lock);
 //	debug("[ %lld] %s\n",count,__func__);
 	__ib_rdma_send(rmh->rdma,rmh->rpc_mr,rmh->rpc_buffer,1,_wc->imm_data,true);
@@ -178,15 +174,16 @@ static void __process_multicast_rpc_flow(struct multicast_memory_handler_t *mmh 
 	struct recv_work *rw = (struct recv_work *)wc->wr_id;
 	struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
 	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));
-	//pthread_mutex_lock(&rmh->memblock_lock);
+
 	pthread_spin_lock(&mmh->lock);
-//	if(pthread_spin_trylock(&mmh->lock) != EBUSY){
-	ib_convey_page(rmh,wc);
+	if(!rw->convey){
+		ib_convey_page(rmh,wc);
+		list_add_tail(&rw->list,&mmh->commit_list);
+	}
 	pthread_spin_unlock(&mmh->lock);
-//	}
-	//pthread_mutex_unlock(&rmh->memblock_lock);
-	list_add_tail(&rw->list,&mmh->commit_list);
+
 }
+
 
 static void __process_multicast_rpc_check(struct multicast_memory_handler_t *mmh ,struct ibv_wc *wc)
 {

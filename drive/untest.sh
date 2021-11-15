@@ -1,1 +1,1 @@
-sudo rmmod ib
+sudo rmmod sib

@@ -8,9 +8,10 @@ default:
 
 load:
 	./test.sh
-	sudo insmod mbswap.ko
+	sudo insmod maruswap.ko
+
 unload:
-	sudo rmmod mbswap.ko
+	sudo rmmod maruswap.ko
 	./untest.sh
 
 clean:
