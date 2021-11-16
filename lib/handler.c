@@ -106,7 +106,6 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 				break;
 			}
 		}
-
 		rw->convey = false;
 		ib_putback_recv_work(mmh->multicast->qp,(struct recv_work*)wc->wr_id);
 		list_del_init(&rw->list);
@@ -175,11 +174,11 @@ static void __process_multicast_rpc_flow(struct multicast_memory_handler_t *mmh 
 	struct recv_work *rw = (struct recv_work *)wc->wr_id;
 	struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
 	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));
+	list_add_tail(&rw->list,&mmh->commit_list);
 
 	pthread_spin_lock(&mmh->lock);
 	if(!rw->convey){
 		ib_convey_page(rmh,wc);
-		list_add_tail(&rw->list,&mmh->commit_list);
 	}
 	pthread_spin_unlock(&mmh->lock);
 
