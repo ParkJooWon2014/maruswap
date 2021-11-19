@@ -57,3 +57,5 @@ cscope.out
 
 # etc
 config.h
+server
+client
