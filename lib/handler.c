@@ -115,7 +115,7 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 		ib_putback_recv_work(mmh->multicast->qp,(struct recv_work*)wc->wr_id);
 		list_del_init(&rw->list);
 	}
-
+	rmh->batch = 0;
 	pthread_spin_unlock(&mmh->lock);
 //	debug("[ %lld] %s\n",count,__func__);
 	__ib_rdma_send(rmh->rdma,rmh->rpc_mr,rmh->rpc_buffer,1,_wc->imm_data,true);
