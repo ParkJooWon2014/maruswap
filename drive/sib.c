@@ -1314,19 +1314,14 @@ int mbswap_rdma_read(struct page *page, u64 roffset)
 		pr_err("Unable to get page for dma\n");
 		return ret;
 	}
-	//cond_resched();
-	//check = xa_load(rdma_ctrl->check_list,offset);
+	
 	check = stage_buffer_load(rdma_ctrl->stage_buffer,page,roffset);
 	xa_store(rdma_ctrl->read_list,offset,rdma_ctrl,GFP_KERNEL);
 
 	if(check){
-//		check = stage_buffer_load(rdma_ctrl->stage_buffer,page,roffset);
-	//	if(check){
 		ib_dma_unmap_page(rdma_ctrl->rdma->qp->device, dma, 
 				PAGE_SIZE, DMA_FROM_DEVICE);
-	//	}
 	}
-
 
 	if(!check){
 		ret = __ib_rdma_send(rdma_ctrl->rdma->qp,dma,0x0,IB_WR_RDMA_READ,rdma_info,(send_offset << PAGE_SHIFT));
@@ -1342,7 +1337,7 @@ int mbswap_rdma_read(struct page *page, u64 roffset)
 }
 EXPORT_SYMBOL(mbswap_rdma_read);
 
-
+ 
 module_init(init_ib);
 module_exit(cleanup_ib);
 

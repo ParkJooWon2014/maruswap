@@ -63,7 +63,7 @@ struct rdma_memory_handler_t{
 	pthread_t thread_id[NR_RECVER];
 
 	pthread_barrier_t *barrier;
-
+	int batch;
 };
 
 struct multicast_memory_handler_t{
