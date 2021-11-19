@@ -99,8 +99,8 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 		assert(1);
 	}
 
-	while(rmh->batch != CONFIG_BATCH);
-	
+	while(rmh->batch < CONFIG_BATCH);
+
 	pthread_spin_lock(&mmh->lock);
 	list_for_each_entry_safe(rw,safe,&mmh->commit_list,list){
 		struct ibv_wc *wc = &rw->wc;
