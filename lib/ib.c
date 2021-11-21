@@ -281,7 +281,7 @@ struct rdma_memory_handler_t *alloc_rdma_memory_handler(struct rdma_cm_event *ev
 	}
 
 	INIT_LIST_HEAD(&rmh->memblock_list);
-	rmh->batch = 0;
+	atomic_set(&rmh->batch,0);
 	pthread_mutex_init(&rmh->memblock_lock, NULL);
 	pthread_mutex_lock(&rmh->memblock_lock);
 

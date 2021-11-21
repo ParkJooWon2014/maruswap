@@ -3,6 +3,7 @@
 #include "common.h"
 #include "rpc.h"
 #include "ib.h"
+#include "atomic.h"
 
 #include <stdlib.h>
 
@@ -78,7 +79,7 @@ static bool ib_convey_page(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
 	dst_buffer = rmh->memblocks[nr_block]->buffer + (offset << 12);
 	__ib_convey_page(src_buffer,dst_buffer);
 	rw->convey = true;
-	rmh->batch++;
+	atomic_inc(&rmh->batch);
 
 	return true;
 }
@@ -99,7 +100,7 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 		assert(1);
 	}
 
-	while(rmh->batch < CONFIG_BATCH);
+	while(atomic_read(&rmh->batch) < CONFIG_BATCH);
 
 	pthread_spin_lock(&mmh->lock);
 	list_for_each_entry_safe(rw,safe,&mmh->commit_list,list){
@@ -115,7 +116,7 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 		ib_putback_recv_work(mmh->multicast->qp,(struct recv_work*)wc->wr_id);
 		list_del_init(&rw->list);
 	}
-	rmh->batch = 0;
+	atomic_set(&rmh->batch,0);
 	pthread_spin_unlock(&mmh->lock);
 //	debug("[ %lld] %s\n",count,__func__);
 	__ib_rdma_send(rmh->rdma,rmh->rpc_mr,rmh->rpc_buffer,1,_wc->imm_data,true);
@@ -180,9 +181,8 @@ static void __process_multicast_rpc_flow(struct multicast_memory_handler_t *mmh 
 
 	struct recv_work *rw = (struct recv_work *)wc->wr_id;
 	struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
-//	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));
-
-	rw->wc = *wc;
+	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));
+	//rw->wc = *wc;
 
 	pthread_spin_lock(&mmh->lock);
 	if(!rw->convey){
