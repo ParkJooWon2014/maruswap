@@ -36,13 +36,16 @@ First you should modified those config. ``` MULTICAST_IP ```  and ``` MY_ADDR ``
 
 ## MaRuswap driver (Clinet node)
 
-``` 
-	cd drive
-	make 
+Build do like this
 
 ``` 
+cd drive
+make 
+```
+Before you install this modules, the servers have to prepare ```./server -p ``` to connect server.
 
 ```
-	modprobe sib.ko -fip "main server ip" -sip"
+sudo insmod sib.ko fip="@first_server_ip" sip="@sub_server_ip" myip="@Client_ip" sport=@first_and_sub_server_port_num mip="multicast_ip"
+sudo insmod maruswap.ko
 ```
 
