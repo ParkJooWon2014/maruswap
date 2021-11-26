@@ -1,5 +1,5 @@
-#if !defined(__MBSWAP_RDMA_H__)
-#define __MBSWAP_IB_H__
+#if !defined(__MARUSWAP_RDMA_H__)
+#define __MARUSWAP_IB_H__
 
 #include <rdma/ib_verbs.h>
 #include <rdma/rdma_cm.h>
@@ -35,14 +35,15 @@ enum {
 	BUFFER_SIZE = (1UL <<  5),
 
 	CONFIG_BATCH = (1UL << 10),
-	
+	CONFIG_NR_STAGE_BUFFER = CONFIG_BATCH,
+
 	CONNECTION_TIMEOUT_MS = 60000,
 	COMMIT_TIMEOUT_MS = 6000,//CONFIG_BATCH*5000,
 
-	MBSWAP_MAX_SEND_WR = (1UL << 12),
-	MBSWAP_MAX_RECV_WR = (1UL << 12),
-	MBSWAP_MAX_SEND_SGE = 64,
-	MBSWAP_MAX_RECV_SGE = 64,
+	MARUSWAP_MAX_SEND_WR = (1UL << 12),
+	MARUSWAP_MAX_RECV_WR = (1UL << 12),
+	MARUSWAP_MAX_SEND_SGE = 64,
+	MARUSWAP_MAX_RECV_SGE = 64,
 
 	OPCODE_OPEN = 0x1,
 	OPCODE_COMMIT = 0x3,
@@ -51,14 +52,16 @@ enum {
 	NR_RECV = 32,
 	RPC_MAX_EACH_SIZE = (2*PAGE_SIZE) / NR_RECV,
 
-	SHARE_XARRAY = MBSWAP_MAX_SEND_WR,
+	SHARE_XARRAY = MARUSWAP_MAX_SEND_WR,
 	STAGE_BUFFER_SIZE = (PAGE_SIZE*CONFIG_BATCH),
+
 };
 
 struct stage_buffer_t{
 	void *buffer;
 	struct xarray check_list;
 	spinlock_t lock;
+	int index;
 };
 
 struct recv_work {
@@ -305,8 +308,9 @@ inline char * id_to_msg(int id)
 inline struct ctrl_t *get_ctrl(void){
 	return &ctrl;
 }
-int mbswap_multicast_write(struct page *page, u64 offset);
-int mbswap_rdma_read(struct page *page, u64 offset);
+
+int maruswap_multicast_write(struct page *page, u64 offset);
+int maruswap_rdma_read(struct page *page, u64 offset);
 
 
 #endif

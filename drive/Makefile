@@ -1,10 +1,7 @@
-KDIR ?= /lib/modules/`uname -r`/build
-
-
+KDIR = /lib/modules/`uname -r`/build
 
 default:
-	$(MAKE) -C $(KDIR) M=$$PWD
-
+	$(MAKE) -C $(KDIR) M=$$PWD 
 
 load:
 	./test.sh
@@ -16,5 +13,4 @@ unload:
 
 clean:
 	$(MAKE) -C $(KDIR) M=$$PWD clean
-
 

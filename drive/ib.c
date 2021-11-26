@@ -28,8 +28,8 @@ module_param_string(myip,src_ip,INET_ADDRSTRLEN,0644);
 module_param_string(mip,multicast_ip,INET_ADDRSTRLEN,0644);
 
 
-int mbswap_rdma_read(struct page *page, u64 roffset);
-int mbswap_multicast_write(struct page *page, u64 roffset);
+int maruswap_rdma_read(struct page *page, u64 roffset);
+int maruswap_multicast_write(struct page *page, u64 roffset);
 
 
 int get_rrandom(void)
@@ -152,8 +152,8 @@ static int rdma_ctrl_create_qp(struct rdma_ctrl_t *rdma_ctrl)
 	attrs.recv_cq = rdma_ctrl->rcv_cq;
 
 	attrs.event_handler = ib_rdma_qp_event;
-	attrs.cap.max_send_wr = MBSWAP_MAX_SEND_WR;
-	attrs.cap.max_recv_wr = MBSWAP_MAX_RECV_WR;
+	attrs.cap.max_send_wr = MARUSWAP_MAX_SEND_WR;
+	attrs.cap.max_recv_wr = MARUSWAP_MAX_RECV_WR;
 	attrs.cap.max_send_sge = 1;
 	attrs.cap.max_recv_sge = 1;
 	attrs.cap.max_inline_data = 64;
@@ -180,8 +180,8 @@ static int multicast_ctrl_create_qp(struct multicast_ctrl_t *multicast_ctrl)
 	attrs.send_cq = multicast_ctrl->snd_cq;
 	attrs.recv_cq = multicast_ctrl->rcv_cq;
 
-	attrs.cap.max_send_wr = MBSWAP_MAX_SEND_WR;
-	attrs.cap.max_recv_wr = MBSWAP_MAX_RECV_WR;
+	attrs.cap.max_send_wr = MARUSWAP_MAX_SEND_WR;
+	attrs.cap.max_recv_wr = MARUSWAP_MAX_RECV_WR;
 	attrs.cap.max_send_sge = 1;
 	attrs.cap.max_recv_sge = 1;
 	attrs.cap.max_inline_data = 64;
@@ -1152,11 +1152,11 @@ static void __exit cleanup_ib(void)
 }
 
 
-int mbswap_multicast_write(struct page *page, u64 roffset)
+int maruswap_multicast_write(struct page *page, u64 roffset)
 {
 	int ret = 0;
 	struct multicast_ctrl_t *multicast_ctrl = get_multicast_ctrl();
-	struct rdma_ctrl_t *rdma_ctrl = get_main_rdma_ctrl();
+	struct rdma_ctrl_t *rdma_ctrl = NULL; // = get_main_rdma_ctrl();
 	u64 dma = 0;
 	u32 offset = get_offset(roffset);
 	u64 header = set_header(MULTICAST_OPCODE_FLOW,offset);
@@ -1164,6 +1164,11 @@ int mbswap_multicast_write(struct page *page, u64 roffset)
 	void *check = NULL;
 	unsigned long flags = 0;
 
+	if(smp_processor_id()%2){
+		rdma_ctrl = get_main_rdma_ctrl();
+	}else{
+		rdma_ctrl = get_sub_rdma_ctrl();
+	}
 	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
 
 	ret = get_req_for_page(rdma_ctrl->qp->device,&dma,page);
@@ -1213,9 +1218,9 @@ out_error:
 //	mutex_unlock(rdma_ctrl->lock);
 	return 1;
 }
-EXPORT_SYMBOL(mbswap_multicast_write);
+EXPORT_SYMBOL(maruswap_multicast_write);
 
-int mbswap_rdma_read(struct page *page, u64 roffset)
+int maruswap_rdma_read(struct page *page, u64 roffset)
 {
 	int ret = 0;
 	struct rdma_ctrl_t *rdma_ctrl = NULL; //get_main_rdma_ctrl();
@@ -1270,7 +1275,7 @@ int mbswap_rdma_read(struct page *page, u64 roffset)
 	return ret;
 
 }
-EXPORT_SYMBOL(mbswap_rdma_read);
+EXPORT_SYMBOL(maruswap_rdma_read);
 
 
 module_init(init_ib);

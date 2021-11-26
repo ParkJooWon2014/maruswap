@@ -74,6 +74,7 @@ static bool ib_convey_page(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
 		}
 		printf("add block is completed!\n");
 	}
+	// barrier 
 	src_buffer = rw->buffer + UD_EXTRA;
 	dst_buffer = rmh->memblocks[nr_block]->buffer + (offset << 12);
 	__ib_convey_page(src_buffer,dst_buffer);

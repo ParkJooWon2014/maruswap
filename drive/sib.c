@@ -28,9 +28,8 @@ module_param_string(myip,src_ip,INET_ADDRSTRLEN,0644);
 module_param_string(mip,multicast_ip,INET_ADDRSTRLEN,0644);
 
 
-int mbswap_rdma_read(struct page *page, u64 roffset);
-int mbswap_multicast_write(struct page *page, u64 roffset);
-
+int maruswap_rdma_read(struct page *page, u64 roffset);
+int maruswap_multicast_write(struct page *page, u64 roffset);
 
 
 static int init_stage_buffer(struct stage_buffer_t *stage_buffer)
@@ -41,6 +40,7 @@ static int init_stage_buffer(struct stage_buffer_t *stage_buffer)
 		pr_err("Unable to malloc stage buffer");
 		return ret;
 	}
+	stage_buffer->index = 0;
 	xa_init(&stage_buffer->check_list);
 	spin_lock_init(&stage_buffer->lock);
 	return ret;
@@ -55,15 +55,8 @@ int get_rrandom(void)
 static void stage_buffer_store(struct stage_buffer_t *stage_buffer, 
 		struct page *page, u32 offset, int index)
 {
-	//unsigned long flags;
 	void* src_buf = page_address(page);
-	void* dst_buf = stage_buffer->buffer;
-
-//	spin_lock_irqsave(&stage_buffer->lock,flags);
-	dst_buf += index*PAGE_SIZE;
-	//index = (index + 1) % CONFIG_BATCH;
-//	spin_unlock_irqrestore(&stage_buffer->lock,flags);
-
+	void* dst_buf = stage_buffer->buffer + index*PAGE_SIZE;
 	xa_store(&stage_buffer->check_list,offset,dst_buf,GFP_KERNEL);
 	memcpy(dst_buf, src_buf, PAGE_SIZE);
 }
@@ -71,31 +64,33 @@ static void stage_buffer_store(struct stage_buffer_t *stage_buffer,
 static void * stage_buffer_load(struct stage_buffer_t *stage_buffer, 
 		struct page *page, u32 offset)
 {
-	void* result;
-	void* buf = page_address(page);
+	void* src_buf = NULL;
+	void* dst_buf = page_address(page);
 
-	cond_resched();
-	result = xa_load(&stage_buffer->check_list,offset);
-	if(!result){
+	// lock
+	//cond_resched();
+	xa_lock(&stage_buffer->check_list);
+	src_buf = xa_load(&stage_buffer->check_list,offset); // 범인인가? 
+	xa_unlock(&stage_buffer->check_list);
+	if(!src_buf){
 		return NULL;
 	}
-
-	memcpy(buf,result,PAGE_SIZE);
-
-	return result;
-
+	memcpy(dst_buf,src_buf,PAGE_SIZE);
+//	pr_info("load  to stage_buffer");
+	return src_buf;
 }
 
 void clear_stage_buffer_addr(struct stage_buffer_t *stage_buffer)
 {
-	unsigned long  offset = 0 ;
-	void* ret = NULL ;
-
+	unsigned long  offset = 0;
+	void* ret = NULL;
+	xa_lock(&stage_buffer->check_list);
 	xa_for_each(&stage_buffer->check_list,offset,ret){
 		if(ret){
-			xa_erase(&stage_buffer->check_list,offset);
+			__xa_erase(&stage_buffer->check_list,offset);
 		}
 	}
+	xa_unlock(&stage_buffer->check_list);
 }
 static int get_random(void)
 {
@@ -115,7 +110,7 @@ struct binder {
 struct binder binders[NR_BINDERS];
 
 void init_binder(void){
-	int i = 0 ;
+	int i = 0;
 	for (; i < NR_BINDERS; i++) {
 		atomic_set(&binders[i].flags, 0);
 	}
@@ -125,7 +120,7 @@ int __get_binder(void)
 {
 	int index;
 	int old;
-	struct timespec ;
+	struct timespec;
 	do {
 		index = get_random();
 		old = atomic_cmpxchg(&binders[index].flags, 0, 1);
@@ -158,38 +153,40 @@ static struct ib_client ib_client = {
 	.add =  ib_addone,
 	.remove = ib_removeone,
 };
-
+/*RDMA : FROM*/
 
 inline static int get_req_for_page(struct ib_device *dev,
-		u64 *dma, struct page *page)
+		u64 *dma, struct page *page,
+		enum dma_data_direction direction)
 {
 	int ret = 0;
 
-	*dma = ib_dma_map_page(dev,page,0,PAGE_SIZE,DMA_TO_DEVICE);
+	*dma = ib_dma_map_page(dev,page,0,PAGE_SIZE,direction);
 	if(unlikely(ib_dma_mapping_error(dev,*dma))){
 		pr_err("Unable to dma paiing\n");
 		ret = - ENOMEM;
 		return ret;
 	}
 
-	ib_dma_sync_single_for_device(dev,*dma,PAGE_SIZE,DMA_TO_DEVICE);
+	ib_dma_sync_single_for_device(dev,*dma,PAGE_SIZE,direction);
 
 	return ret;
 }
 
 inline static int get_req_for_buf(struct ib_device *dev,
-		u64 *dma,void *buf, size_t size)
+		u64 *dma,void *buf, size_t size,
+		enum dma_data_direction direction)
 {
 	int ret = 0;
 
-	*dma = ib_dma_map_single(dev, buf, size, DMA_TO_DEVICE);
+	*dma = ib_dma_map_single(dev, buf, size,direction);
 	if (unlikely(ib_dma_mapping_error(dev, *dma))) {
 		pr_err("ib_dma_mapping_error\n");
 		ret = -ENOMEM;
 		return ret;
 	}
 
-	ib_dma_sync_single_for_device(dev, *dma, size, DMA_TO_DEVICE);
+	ib_dma_sync_single_for_device(dev, *dma, size, direction);
 
 	return ret;
 }
@@ -202,7 +199,7 @@ static void ib_rdma_qp_event(struct ib_event *e, void *c)
 static int rdma_ctrl_create_qp(struct rdma_ctrl_t *rdma_ctrl)
 {
 	struct ib_qp_init_attr attrs;
-	int ret = 0 ;
+	int ret = 0;
 
 	memset(&attrs,0,sizeof(attrs));
 
@@ -211,8 +208,8 @@ static int rdma_ctrl_create_qp(struct rdma_ctrl_t *rdma_ctrl)
 	attrs.recv_cq = rdma_ctrl->rcv_cq;
 
 	attrs.event_handler = ib_rdma_qp_event;
-	attrs.cap.max_send_wr = MBSWAP_MAX_SEND_WR;
-	attrs.cap.max_recv_wr = MBSWAP_MAX_RECV_WR;
+	attrs.cap.max_send_wr = MARUSWAP_MAX_SEND_WR;
+	attrs.cap.max_recv_wr = MARUSWAP_MAX_RECV_WR;
 	attrs.cap.max_send_sge = 1;
 	attrs.cap.max_recv_sge = 1;
 	attrs.cap.max_inline_data = 64;
@@ -231,7 +228,7 @@ static int rdma_ctrl_create_qp(struct rdma_ctrl_t *rdma_ctrl)
 static int multicast_ctrl_create_qp(struct multicast_ctrl_t *multicast_ctrl)
 {
 	struct ib_qp_init_attr attrs;
-	int ret = 0 ;
+	int ret = 0;
 
 	memset(&attrs,0,sizeof(attrs));
 
@@ -239,8 +236,8 @@ static int multicast_ctrl_create_qp(struct multicast_ctrl_t *multicast_ctrl)
 	attrs.send_cq = multicast_ctrl->snd_cq;
 	attrs.recv_cq = multicast_ctrl->rcv_cq;
 
-	attrs.cap.max_send_wr = MBSWAP_MAX_SEND_WR;
-	attrs.cap.max_recv_wr = MBSWAP_MAX_RECV_WR;
+	attrs.cap.max_send_wr = MARUSWAP_MAX_SEND_WR;
+	attrs.cap.max_recv_wr = MARUSWAP_MAX_RECV_WR;
 	attrs.cap.max_send_sge = 1;
 	attrs.cap.max_recv_sge = 1;
 	attrs.cap.max_inline_data = 64;
@@ -331,7 +328,7 @@ out_alloc_pd:
 static int rdma_route_resolved(struct rdma_ctrl_t *rdma_ctrl,
 		struct rdma_conn_param *conn_params)
 {
-	int ret = 0 ;
+	int ret = 0;
 	struct rdma_conn_param param;
 
 	pr_info("[%s] : START : %s\n",id_to_msg(rdma_ctrl->id),__FUNCTION__);
@@ -360,26 +357,27 @@ static int rdma_connect_established(struct rdma_ctrl_t * rdma_ctrl)
 	int i = 0;
 	struct ib_device *dev = rdma_ctrl->qp->device;
 	u64 dma;
-	int ret = 0 ;
+	int ret = 0;
 
 	rdma_ctrl->rcv_buffer = kzalloc(PAGE_SIZE,GFP_KERNEL);
 	if(!rdma_ctrl->rcv_buffer){
 		pr_err("Unable to alloc rdma buffer\n");
 		return 1;
 	}
-	ret = get_req_for_buf(dev,&dma,rdma_ctrl->rcv_buffer,PAGE_SIZE);
+	ret = get_req_for_buf(dev,&dma,rdma_ctrl->rcv_buffer,PAGE_SIZE,DMA_BIDIRECTIONAL);
 	if(ret){
 		pr_err("Unable to get req for recv buf \n");
 		return ret;
 	}
 
-	ret = get_req_for_buf(dev,&rdma_ctrl->dma_buffer,rdma_ctrl->buffer,PAGE_SIZE);
+	ret = get_req_for_buf(dev,&rdma_ctrl->dma_buffer,rdma_ctrl->buffer,
+			PAGE_SIZE,DMA_BIDIRECTIONAL);
 	if(ret){
 		pr_err("Unable to get req for buf \n");
 		return ret;
 	}
 
-	for(i=0; i < NR_RECV ; i ++){
+	for(i=0; i < NR_RECV; i ++){
 
 		struct recv_work * rw = kzalloc(sizeof(*rw),GFP_KERNEL);
 		const struct ib_recv_wr *bad_wr = NULL;
@@ -473,7 +471,7 @@ static int ib_rdma_cm_handler(struct rdma_cm_id *cm_id,
 
 static int multicast_addr_resolved(struct multicast_ctrl_t * multicast_ctrl,struct rdma_cm_event *event)
 {
-	int ret = 0 ;
+	int ret = 0;
 	u8 join_state = 1;
 
 	multi_info("START : %s" ,__FUNCTION__);
@@ -549,7 +547,7 @@ static int multicast_ctrl_joined(struct multicast_ctrl_t * multicast_ctrl,struct
 
 	ud->remote_qpn = event->param.ud.qp_num;
 	ud->remote_qkey = event->param.ud.qkey;
-	multicast_ctrl->ud_package = ud ;
+	multicast_ctrl->ud_package = ud;
 
 	multicast_ctrl->snd_cq = ib_alloc_cq(multicast_ctrl->multicast->device,multicast_ctrl,4096,
 			0,IB_POLL_DIRECT);
@@ -790,7 +788,7 @@ static int __ib_rpc(struct ib_qp *qp, uint32_t opcode,
 		void *req, size_t req_size, 
 		void *res, size_t res_size)
 {
-	volatile unsigned int done = 0 ;
+	volatile unsigned int done = 0;
 	int binder = __get_binder();
 	struct ib_sge sge = {
 		.addr = (uintptr_t)req,
@@ -816,7 +814,7 @@ static int __ib_rpc(struct ib_qp *qp, uint32_t opcode,
 		pr_err("Unable to ib send in rpc\n");
 		return 1;
 	}
-
+	// 받기 .....  
 	while(!done){
 		struct ib_wc wc;
 		int nr_completed;
@@ -835,7 +833,7 @@ static int __ib_rpc(struct ib_qp *qp, uint32_t opcode,
 	while(atomic_read(&binders[binder].flags) != 2){
 		struct ib_wc wc;
 		int bi;
-		int nr_completed ;
+		int nr_completed;
 
 		nr_completed = ib_poll_cq(qp->recv_cq,1,&wc);
 		if(nr_completed == 0 ){
@@ -884,7 +882,6 @@ static int ib_rpc_open_unlocked(struct rdma_ctrl_t *rdma_ctrl, u64 roffset)
 		goto out_error;
 	}
 
-
 	memset(req_rdma_info,0x0,sizeof(*req_rdma_info));
 	pr_info("[%s][OPEN]: [%d] remote addr : %lx rkey %x  \n",id_to_msg(rdma_ctrl->id),moffset,rdma_ctrl->rdma_info[moffset].remote_addr,
 			rdma_ctrl->rdma_info[moffset].rkey);
@@ -897,10 +894,7 @@ out_error:
 int ib_rpc_open(struct rdma_ctrl_t *rdma_ctrl, u64 roffset)
 {
 	int ret = 0;
-
-
 	ret = ib_rpc_open_unlocked(rdma_ctrl,roffset);
-
 	return ret;
 }
 
@@ -910,11 +904,7 @@ int ib_rpc_open_all(u64 roffset)
 	struct rdma_ctrl_t *sub_rdma_ctrl = get_sub_rdma_ctrl();
 
 	int ret = 0;
-	int tret = 0 ;
-
-	pr_info("%s",__func__);
-
-
+	int tret = 0;
 
 	if(sub_rdma_ctrl->alive){
 		tret = ib_rpc_open_unlocked(sub_rdma_ctrl,roffset);
@@ -939,8 +929,8 @@ int ib_rpc_open_all(u64 roffset)
 
 void free_addr(struct rdma_ctrl_t *rdma_ctrl)
 {
-	unsigned long  offset = 0 ;
-	void* ret = NULL ;
+	unsigned long  offset = 0;
+	void* ret = NULL;
 	xa_for_each(rdma_ctrl->check_list,offset,ret){
 		if(ret){
 			xa_erase(rdma_ctrl->check_list,offset);
@@ -966,15 +956,14 @@ int ib_rpc_commit(struct rdma_ctrl_t *rdma_ctrl)
 	int ret = 0;
 	pr_info("%s",__func__);
 	ret = ib_rpc_commit_unlocked(rdma_ctrl);
-	//free_addr(rdma_ctrl);
-
+	clear_stage_buffer_addr(rdma_ctrl->stage_buffer);
 	return ret;
 }
 
 int ib_rpc_commit_all(void)
 {
 	struct ctrl_t * ctrl = get_ctrl();
-	struct rdma_ctrl_t *rdma_ctrl =  NULL ;
+	struct rdma_ctrl_t *rdma_ctrl =  NULL;
 	int ret = 0;
 	int tret = 0;
 
@@ -988,12 +977,8 @@ int ib_rpc_commit_all(void)
 	}
 
 	rdma_ctrl = get_main_rdma_ctrl();
-
-	//spin_lock_irq(rdma_ctrl->spinlock);
-	//free_addr(rdma_ctrl);
 	atomic_set(rdma_ctrl->batch,0);
 	clear_stage_buffer_addr(rdma_ctrl->stage_buffer);
-	//spin_unlock_irq(rdma_ctrl->spinlock);
 
 	ret |= tret;
 
@@ -1002,7 +987,8 @@ int ib_rpc_commit_all(void)
 
 int __ib_multicast_send(struct ud_package_t *ud, uintptr_t dma, 
 		uint32_t header, struct stage_buffer_t *stage_buffer,
-		struct page *page ,u32 offset, int index)
+		struct page *page ,u32 offset, int index,
+		enum dma_data_direction direction)
 {
 	int ret = 0;
 	volatile unsigned long done = 0;
@@ -1054,13 +1040,15 @@ int __ib_multicast_send(struct ud_package_t *ud, uintptr_t dma,
 		pdone = (long unsigned int *)wc.wr_id;
 		*pdone = 1;
 	}
-
-	ib_dma_unmap_page(ud->qp->device, dma, PAGE_SIZE, DMA_FROM_DEVICE);
+	
+	ib_dma_unmap_page(ud->qp->device, dma, PAGE_SIZE, direction);
+	
 	return ret;
 }
 
 static int __ib_rdma_send(struct ib_qp *qp, uintptr_t dma, uint32_t header, 
-		enum ib_wr_opcode opcode, struct rdma_info_t *rdma_info, u32 offset)
+		enum ib_wr_opcode opcode, struct rdma_info_t *rdma_info, u32 offset,
+		enum dma_data_direction direction)
 {
 	int ret = 0;
 	const struct ib_send_wr *bad_wr;
@@ -1111,7 +1099,7 @@ static int __ib_rdma_send(struct ib_qp *qp, uintptr_t dma, uint32_t header,
 		*pdone = 1;
 	}
 
-	ib_dma_unmap_page(qp->device, dma, PAGE_SIZE, DMA_FROM_DEVICE);
+	ib_dma_unmap_page(qp->device, dma, PAGE_SIZE, direction);
 
 	return ret;
 }
@@ -1121,13 +1109,14 @@ static int __init init_ib(void)
 	int ret = 0;
 	struct rdma_ctrl_t *rdma_ctrl = NULL;
 	struct multicast_ctrl_t *multicast_ctrl = get_multicast_ctrl();
+	
 	/*
-	   u64 count = 0 ;
-
-	   struct page *page; 
-	   void *buf = NULL;
-	   u64 *rdn = kzalloc(sizeof(*rdn)*1024,GFP_KERNEL);
-	   */  
+	struct page *page; 
+	void *buf = NULL;
+	   
+	 u64 *rdn = kzalloc(sizeof(*rdn)*1024,GFP_KERNEL);
+	u64 count = 0 ;
+	*/ 
 	init_ctrl();
 	init_binder();
 	pr_info("start : %s\n",__FUNCTION__);
@@ -1157,10 +1146,11 @@ static int __init init_ib(void)
 		pr_err("Unable to init multicast\n");
 		goto out_init_ctrl;
 	}
+
 	/*
 	   page = alloc_pages(GFP_KERNEL,0);
 	   buf = page_address(page);
-
+	
 	   for(count = 0 ; count < (1UL << 10); count ++){
 	   rdn[count] = get_rrandom() & 0xfffff000;
 	   snprintf(buf,PAGE_SIZE,"STAGE %llx",rdn[count]);
@@ -1173,14 +1163,14 @@ static int __init init_ib(void)
 
 	   __free_page(page);
 	   kfree(rdn);
-	   */ 
-	pr_info("init mbswapib complete!\n");
+	*/
+	pr_info("init maruswapib complete!\n");
 
 	return  rdma_ctrl->cm_error;
 
 out_init_ctrl:
 
-	return ret;
+	return -EINVAL;
 }
 
 static void __exit cleanup_ib(void)
@@ -1221,7 +1211,7 @@ static void __exit cleanup_ib(void)
 }
 
 
-int mbswap_multicast_write(struct page *page, u64 roffset)
+int maruswap_multicast_write(struct page *page, u64 roffset)
 {
 	int ret = 0;
 	struct multicast_ctrl_t *multicast_ctrl = get_multicast_ctrl();
@@ -1230,13 +1220,13 @@ int mbswap_multicast_write(struct page *page, u64 roffset)
 	u32 offset = get_offset(roffset);
 	u64 header = set_header(MULTICAST_OPCODE_FLOW,offset);
 	int nr_memblock = get_num_memblock(roffset);
-	void *check = NULL;
+	//void *check = NULL;
 	unsigned long flags = 0;
-	static int index = 0;
+	int index = 0;
 
 	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
 
-	ret = get_req_for_page(rdma_ctrl->qp->device,&dma,page);
+	ret = get_req_for_page(rdma_ctrl->qp->device,&dma,page,DMA_BIDIRECTIONAL);
 	if(unlikely(ret)){
 		pr_err("Unable to get page for dma\n");
 		return ret;
@@ -1251,33 +1241,31 @@ int mbswap_multicast_write(struct page *page, u64 roffset)
 			goto out_error;
 		}
 	}
-
+		
 	if(atomic_read(rdma_ctrl->batch) >= (CONFIG_BATCH)){
 		ret = ib_rpc_commit_all();
 		if(unlikely(ret)){
 			pr_err("Unable to rpc commit\n");
 			goto out_error;
 		}
-		index = (index +1)%CONFIG_BATCH;
+		
+		index = rdma_ctrl->stage_buffer->index;
+		rdma_ctrl->stage_buffer->index = (rdma_ctrl->stage_buffer->index +1)
+			%CONFIG_NR_STAGE_BUFFER;
+		
 	}
+	
+	atomic_inc(rdma_ctrl->batch);
 	spin_unlock_irqrestore(rdma_ctrl->spinlock,flags); 
 	//recommand : spinlock variable sched_ yield reschled (?) cond_reschled--> just sleep little bit: 	
-	//xa_store(rdma_ctrl->check_list,offset,rdma_ctrl,GFP_KERNEL);
-	check = xa_load(rdma_ctrl->read_list,offset);	// OUT_ XARRAY by Synchroniztion level :  TEST
-
-	stage_buffer_store(rdma_ctrl->stage_buffer,page,offset,index);
-	if(check){										
-		pr_info("something wrong....in write\n");
-		xa_erase(rdma_ctrl->check_list,offset);
-	}else{
-		ret = __ib_multicast_send(multicast_ctrl->ud_package,dma,header,rdma_ctrl->stage_buffer,page,offset,index);
-		if(unlikely(ret)){
-			pr_err("Unable to send_multicast\n");
-			goto out_error;
-		}
-		atomic_inc(rdma_ctrl->batch);
+	
+	ret = __ib_multicast_send(multicast_ctrl->ud_package,dma,header,rdma_ctrl->stage_buffer,
+			page,offset,index,DMA_BIDIRECTIONAL);
+	
+	if(unlikely(ret)){
+		pr_err("Unable to send_multicast\n");
 	}
-
+			
 	return ret;
 
 out_error:
@@ -1285,9 +1273,9 @@ out_error:
 	//	mutex_unlock(rdma_ctrl->lock);
 	return 1;
 }
-EXPORT_SYMBOL(mbswap_multicast_write);
+EXPORT_SYMBOL(maruswap_multicast_write);
 
-int mbswap_rdma_read(struct page *page, u64 roffset)
+int maruswap_rdma_read(struct page *page, u64 roffset)
 {
 	int ret = 0;
 	struct rdma_ctrl_t *rdma_ctrl = NULL;
@@ -1309,38 +1297,29 @@ int mbswap_rdma_read(struct page *page, u64 roffset)
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
 	VM_BUG_ON_PAGE(PageUptodate(page), page);
 
-	ret = get_req_for_page(rdma_ctrl->qp->device,&dma,page);
+	ret = get_req_for_page(rdma_ctrl->qp->device,&dma,page,DMA_BIDIRECTIONAL);
 	if(unlikely(ret)){
 		pr_err("Unable to get page for dma\n");
 		return ret;
 	}
-	//cond_resched();
-	//check = xa_load(rdma_ctrl->check_list,offset);
+
 	check = stage_buffer_load(rdma_ctrl->stage_buffer,page,roffset);
-	xa_store(rdma_ctrl->read_list,offset,rdma_ctrl,GFP_KERNEL);
 
 	if(check){
-//		check = stage_buffer_load(rdma_ctrl->stage_buffer,page,roffset);
-	//	if(check){
 		ib_dma_unmap_page(rdma_ctrl->rdma->qp->device, dma, 
-				PAGE_SIZE, DMA_FROM_DEVICE);
-	//	}
-	}
-
-
-	if(!check){
-		ret = __ib_rdma_send(rdma_ctrl->rdma->qp,dma,0x0,IB_WR_RDMA_READ,rdma_info,(send_offset << PAGE_SHIFT));
+				PAGE_SIZE, DMA_BIDIRECTIONAL);
+	}else{
+		ret = __ib_rdma_send(rdma_ctrl->rdma->qp,dma,0x0,IB_WR_RDMA_READ,
+				rdma_info,(send_offset << PAGE_SHIFT),DMA_BIDIRECTIONAL);
 		if(unlikely(ret)){
 			pr_err("Unable to rdma send");
 		}
 	}
 
-	xa_erase(rdma_ctrl->read_list,offset);
-
 	return ret;
 
 }
-EXPORT_SYMBOL(mbswap_rdma_read);
+EXPORT_SYMBOL(maruswap_rdma_read);
 
 
 module_init(init_ib);
