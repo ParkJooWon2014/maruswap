@@ -57,8 +57,11 @@ static void stage_buffer_store(struct stage_buffer_t *stage_buffer,
 {
 	void* src_buf = page_address(page);
 	void* dst_buf = stage_buffer->buffer + index*PAGE_SIZE;
+	
+	xa_lock(&stage_buffer->check_list);
 	xa_store(&stage_buffer->check_list,offset,dst_buf,GFP_KERNEL);
 	memcpy(dst_buf, src_buf, PAGE_SIZE);
+	xa_unlock(&stage_buffer->check_list);
 }
 
 static void * stage_buffer_load(struct stage_buffer_t *stage_buffer, 
@@ -67,16 +70,14 @@ static void * stage_buffer_load(struct stage_buffer_t *stage_buffer,
 	void* src_buf = NULL;
 	void* dst_buf = page_address(page);
 
-	// lock
-	//cond_resched();
 	xa_lock(&stage_buffer->check_list);
-	src_buf = xa_load(&stage_buffer->check_list,offset); // 범인인가? 
-	xa_unlock(&stage_buffer->check_list);
+	src_buf = xa_load(&stage_buffer->check_list,offset); // 범인인가? 	
 	if(!src_buf){
+		xa_unlock(&stage_buffer->check_list);
 		return NULL;
 	}
 	memcpy(dst_buf,src_buf,PAGE_SIZE);
-//	pr_info("load  to stage_buffer");
+	xa_unlock(&stage_buffer->check_list);
 	return src_buf;
 }
 
@@ -1297,7 +1298,7 @@ int maruswap_rdma_read(struct page *page, u64 roffset)
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
 	VM_BUG_ON_PAGE(PageUptodate(page), page);
 
-	check = stage_buffer_load(rdma_ctrl->stage_buffer,page,roffset);
+	check = stage_buffer_load(rdma_ctrl->stage_buffer,page,offset);
 
 	if(check){
 		ib_dma_unmap_page(rdma_ctrl->rdma->qp->device, dma, 
