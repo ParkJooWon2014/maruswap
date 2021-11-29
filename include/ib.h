@@ -8,6 +8,7 @@
 #include <rdma/rdma_verbs.h>
 #include <pthread.h>
 
+#include "atomic.h"
 #include "memblock.h"
 #include "rpc.h"
 #include "config.h"
@@ -63,7 +64,7 @@ struct rdma_memory_handler_t{
 	pthread_t thread_id[NR_RECVER];
 
 	pthread_barrier_t *barrier;
-
+	atomic_t batch;
 };
 
 struct multicast_memory_handler_t{

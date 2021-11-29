@@ -1297,12 +1297,6 @@ int maruswap_rdma_read(struct page *page, u64 roffset)
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
 	VM_BUG_ON_PAGE(PageUptodate(page), page);
 
-	ret = get_req_for_page(rdma_ctrl->qp->device,&dma,page,DMA_BIDIRECTIONAL);
-	if(unlikely(ret)){
-		pr_err("Unable to get page for dma\n");
-		return ret;
-	}
-
 	check = stage_buffer_load(rdma_ctrl->stage_buffer,page,roffset);
 
 	if(check){
@@ -1321,7 +1315,7 @@ int maruswap_rdma_read(struct page *page, u64 roffset)
 }
 EXPORT_SYMBOL(maruswap_rdma_read);
 
-
+ 
 module_init(init_ib);
 module_exit(cleanup_ib);
 

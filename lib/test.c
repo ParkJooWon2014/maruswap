@@ -207,6 +207,7 @@ void test_rpc_open(void)
 	double interval_time = 0.0;
 	double interval_write_time = 0.0;
 	double interval_read_time = 0.0;
+	int numlist[1UL << 18];
 
 	uint64_t nr_block;
 	int send_count = 0;
@@ -221,6 +222,8 @@ void test_rpc_open(void)
 		offset -= (nr_block << 30) ;
 
 		rnum = rand();	
+		numlist[i] = rnum;
+
 		snprintf(lnum,PAGE_SIZE,"%d",rnum);
 		//		memset(lnum,rnum,PAGE_SIZE);
 
@@ -246,7 +249,10 @@ void test_rpc_open(void)
 							(void*)list[nr_block].remote_addr + (1UL<<12)*i ,list[nr_block].rkey,false)){
 					break;
 				}
-				//		debug("%s\n",(char*)scan_buffer);
+				debug("%s\n",(char*)scan_buffer);
+				if(numlist[i] != atoi(scan_buffer)){
+					debug("==============FUCK===============\n");
+				}
 				clock_gettime(CLOCK_REALTIME,&read_end);	
 				interval_read_time += ((read_end.tv_sec - read_begin.tv_sec) + (read_end.tv_nsec - read_begin.tv_nsec)/ 1000000000.0);
 			}

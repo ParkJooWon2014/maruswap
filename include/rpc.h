@@ -33,6 +33,8 @@ enum{
 	MULTICAST_OPCODE_CHECK = 0x2,
 	MULTICAST_OPCODE_COMMIT =0x3,
 	MULTICAST_OPCODE_NONE = 0xf,
+
+	CONFIG_BATCH = 1024,
 };
 
 struct recv_work {
@@ -49,6 +51,7 @@ struct recv_work {
 	struct ibv_wc wc;
 
 	bool convey;
+	int memblock;
 };
 
 struct send_work {

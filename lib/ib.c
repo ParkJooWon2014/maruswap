@@ -281,7 +281,7 @@ struct rdma_memory_handler_t *alloc_rdma_memory_handler(struct rdma_cm_event *ev
 	}
 
 	INIT_LIST_HEAD(&rmh->memblock_list);
-
+	atomic_set(&rmh->batch,0);
 	pthread_mutex_init(&rmh->memblock_lock, NULL);
 	pthread_mutex_lock(&rmh->memblock_lock);
 
@@ -338,7 +338,7 @@ struct rdma_memory_handler_t *alloc_rdma_memory_handler(struct rdma_cm_event *ev
 					.sg_list = &rw->sg_list,
 					.num_sge = 1,
 				},
-				//.convey = false,
+				.convey = false,
 		};
 
 		if (ibv_post_recv(rmh->rdma->qp, &rw->wr, &bad_wr)) {

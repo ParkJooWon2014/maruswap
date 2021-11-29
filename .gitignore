@@ -54,3 +54,8 @@ dkms.conf
 # Auxiliary
 tags
 cscope.out
+
+# etc
+config.h
+server
+client
