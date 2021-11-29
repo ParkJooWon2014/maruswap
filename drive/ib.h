@@ -61,7 +61,7 @@ struct stage_buffer_t{
 	void *buffer;
 	struct xarray check_list;
 	spinlock_t lock;
-	int index;
+	volatile int index;
 };
 
 struct recv_work {
