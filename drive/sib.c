@@ -59,7 +59,7 @@ static void stage_buffer_store(struct stage_buffer_t *stage_buffer,
 	void* dst_buf = stage_buffer->buffer + index*PAGE_SIZE;
 	
 	xa_lock(&stage_buffer->check_list);
-	xa_store(&stage_buffer->check_list,offset,dst_buf,GFP_KERNEL);
+	__xa_store(&stage_buffer->check_list,offset,dst_buf,GFP_KERNEL);
 	memcpy(dst_buf, src_buf, PAGE_SIZE);
 	xa_unlock(&stage_buffer->check_list);
 }
@@ -974,14 +974,13 @@ int ib_rpc_commit_all(void)
 			if(unlikely(tret)){
 				pr_info("Unable to open main_rdma\n");
 			}
+			ret |= tret;
 		}
 	}
 
 	rdma_ctrl = get_main_rdma_ctrl();
 	atomic_set(rdma_ctrl->batch,0);
 	clear_stage_buffer_addr(rdma_ctrl->stage_buffer);
-
-	ret |= tret;
 
 	return ret;
 }
@@ -1250,12 +1249,11 @@ int maruswap_multicast_write(struct page *page, u64 roffset)
 			goto out_error;
 		}
 		
-		index = rdma_ctrl->stage_buffer->index;
-		rdma_ctrl->stage_buffer->index = (rdma_ctrl->stage_buffer->index +1)
-			%CONFIG_NR_STAGE_BUFFER;
-		
 	}
 	
+		
+	index = rdma_ctrl->stage_buffer->index;
+	rdma_ctrl->stage_buffer->index = (index +1)%CONFIG_NR_STAGE_BUFFER;
 	atomic_inc(rdma_ctrl->batch);
 	spin_unlock_irqrestore(rdma_ctrl->spinlock,flags); 
 	//recommand : spinlock variable sched_ yield reschled (?) cond_reschled--> just sleep little bit: 	
