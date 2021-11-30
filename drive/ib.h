@@ -215,7 +215,6 @@ inline void init_ctrl(void)
 	INIT_LIST_HEAD(&ctrl.rdma_ctrl_list);
 	atomic_set(&ctrl.nr_rdma_ctrl,0);
 	atomic_set(&ctrl.batch,0);
-	sema_init(&ctrl.sema,SHARE_XARRAY);
 	xa_init(&ctrl.stage_buffer.check_list);
 }
 

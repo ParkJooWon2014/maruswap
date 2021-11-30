@@ -53,15 +53,19 @@ int get_rrandom(void)
 }
 
 static void stage_buffer_store(struct stage_buffer_t *stage_buffer, 
-		struct page *page, u32 offset, int index)
+		struct page *page, u32 offset)
 {
 	void* src_buf = page_address(page);
-	void* dst_buf = stage_buffer->buffer + index*PAGE_SIZE;
-	
-	xa_lock(&stage_buffer->check_list);
+	void* dst_buf = stage_buffer->buffer; // + index*PAGE_SIZE;
+	unsigned long flags;
+	int index = 0;
+
+	xa_lock_irqsave(&stage_buffer->check_list,flags);
+	dst_buf += stage_buffer->index*PAGE_SIZE;
+	stage_buffer->index = (index +1)%CONFIG_BATCH;
+	memcpy(dst_buf, src_buf,PAGE_SIZE);
 	__xa_store(&stage_buffer->check_list,offset,dst_buf,GFP_KERNEL);
-	memcpy(dst_buf, src_buf, PAGE_SIZE);
-	xa_unlock(&stage_buffer->check_list);
+	xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 }
 
 static void * stage_buffer_load(struct stage_buffer_t *stage_buffer, 
@@ -69,15 +73,17 @@ static void * stage_buffer_load(struct stage_buffer_t *stage_buffer,
 {
 	void* src_buf = NULL;
 	void* dst_buf = page_address(page);
+	unsigned long flags;
 
-	xa_lock(&stage_buffer->check_list);
-	src_buf = xa_load(&stage_buffer->check_list,offset); // 범인인가? 	
+	xa_lock_irqsave(&stage_buffer->check_list,flags);
+	src_buf = xa_load(&stage_buffer->check_list,offset);
 	if(!src_buf){
-		xa_unlock(&stage_buffer->check_list);
+		xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 		return NULL;
 	}
 	memcpy(dst_buf,src_buf,PAGE_SIZE);
-	xa_unlock(&stage_buffer->check_list);
+	xa_unlock_irqrestore(&stage_buffer->check_list,flags);
+
 	return src_buf;
 }
 
@@ -85,14 +91,18 @@ void clear_stage_buffer_addr(struct stage_buffer_t *stage_buffer)
 {
 	unsigned long  offset = 0;
 	void* ret = NULL;
-	xa_lock(&stage_buffer->check_list);
+	unsigned long flags;
+
+	xa_lock_irqsave(&stage_buffer->check_list,flags);
 	xa_for_each(&stage_buffer->check_list,offset,ret){
 		if(ret){
-			__xa_erase(&stage_buffer->check_list,offset);
+			__xa_store(&stage_buffer->check_list,offset,NULL,GFP_KERNEL);
+			//__xa_store(&stage_buffer->check_list,offset);
 		}
 	}
-	xa_unlock(&stage_buffer->check_list);
+	xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 }
+
 static int get_random(void)
 {
 	ktime_t rdn = ktime_get_ns();
@@ -987,8 +997,7 @@ int ib_rpc_commit_all(void)
 
 int __ib_multicast_send(struct ud_package_t *ud, uintptr_t dma, 
 		uint32_t header, struct stage_buffer_t *stage_buffer,
-		struct page *page ,u32 offset, int index,
-		enum dma_data_direction direction)
+		struct page *page ,u32 offset,enum dma_data_direction direction)
 {
 	int ret = 0;
 	volatile unsigned long done = 0;
@@ -1022,7 +1031,7 @@ int __ib_multicast_send(struct ud_package_t *ud, uintptr_t dma,
 		return ret;
 	}
 
-	stage_buffer_store(stage_buffer,page,offset,index);
+	stage_buffer_store(stage_buffer,page,offset);
 
 	while(!done){
 
@@ -1222,7 +1231,6 @@ int maruswap_multicast_write(struct page *page, u64 roffset)
 	int nr_memblock = get_num_memblock(roffset);
 	//void *check = NULL;
 	unsigned long flags = 0;
-	int index = 0;
 
 	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
 
@@ -1251,15 +1259,12 @@ int maruswap_multicast_write(struct page *page, u64 roffset)
 		
 	}
 	
-		
-	index = rdma_ctrl->stage_buffer->index;
-	rdma_ctrl->stage_buffer->index = (index +1)%CONFIG_NR_STAGE_BUFFER;
 	atomic_inc(rdma_ctrl->batch);
 	spin_unlock_irqrestore(rdma_ctrl->spinlock,flags); 
 	//recommand : spinlock variable sched_ yield reschled (?) cond_reschled--> just sleep little bit: 	
 	
 	ret = __ib_multicast_send(multicast_ctrl->ud_package,dma,header,rdma_ctrl->stage_buffer,
-			page,offset,index,DMA_BIDIRECTIONAL);
+			page,offset,DMA_BIDIRECTIONAL);
 	
 	if(unlikely(ret)){
 		pr_err("Unable to send_multicast\n");
@@ -1284,24 +1289,28 @@ int maruswap_rdma_read(struct page *page, u64 roffset)
 	u64 dma = 0;
 	struct rdma_info_t *rdma_info = NULL;
 
+	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
+	VM_BUG_ON_PAGE(!PageLocked(page), page);
+	VM_BUG_ON_PAGE(PageUptodate(page), page);
+
 	if(smp_processor_id()%2){
 		rdma_ctrl = get_main_rdma_ctrl();
 	}else{
 		rdma_ctrl = get_sub_rdma_ctrl();
 	}
 
-	rdma_info = get_rdma_info(rdma_ctrl,(roffset >>30));
-
-	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
-	VM_BUG_ON_PAGE(!PageLocked(page), page);
-	VM_BUG_ON_PAGE(PageUptodate(page), page);
-
 	check = stage_buffer_load(rdma_ctrl->stage_buffer,page,offset);
 
-	if(check){
-		ib_dma_unmap_page(rdma_ctrl->rdma->qp->device, dma, 
-				PAGE_SIZE, DMA_BIDIRECTIONAL);
-	}else{
+	if(!check){
+
+		rdma_info = get_rdma_info(rdma_ctrl,(roffset >>30));
+		
+		ret = get_req_for_page(rdma_ctrl->rdma->device,&dma,page,DMA_BIDIRECTIONAL);
+		if(unlikely(ret)){
+			pr_err("Unable to get page for dma\n");
+			return ret;
+		}
+		
 		ret = __ib_rdma_send(rdma_ctrl->rdma->qp,dma,0x0,IB_WR_RDMA_READ,
 				rdma_info,(send_offset << PAGE_SHIFT),DMA_BIDIRECTIONAL);
 		if(unlikely(ret)){
