@@ -91,6 +91,7 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 	struct recv_work* rw = NULL;
 	struct recv_work *safe = NULL;
 //	static unsigned long long count = 0;
+	int count = 0;
 	if(list_empty(&mmh->commit_list)){	
 		__ib_rdma_send(rmh->rdma,rmh->rpc_mr,rmh->rpc_buffer,1,_wc->imm_data,false);
 		return;
@@ -117,10 +118,14 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 		rw->convey = false;
 		ib_putback_recv_work(mmh->multicast->qp,(struct recv_work*)wc->wr_id);
 		list_del_init(&rw->list);
+		count ++;
 	}
 	atomic_set(&rmh->batch,0);
 	pthread_spin_unlock(&mmh->lock);
 //	debug("[ %lld] %s\n",count,__func__);
+	if(count != CONFIG_BATCH){
+		debug("wrong count is %d\n",count);
+	}
 	__ib_rdma_send(rmh->rdma,rmh->rpc_mr,rmh->rpc_buffer,1,_wc->imm_data,true);
 }
 
