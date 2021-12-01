@@ -986,7 +986,7 @@ static int ib_rpc_commit_unlocked(struct rdma_ctrl_t *rdma_ctrl)
 static int ib_rpc_qcommit_unlocked(struct rdma_ctrl_t *rdma_ctrl, u32 count)
 {
 	int ret = 0;
-	u32 opcode = (OPCODE_QCOMMIT << 28 | (count & 0xfffff00));
+	u32 opcode = (OPCODE_QCOMMIT << 28 | ( (count << 8) &  0xfffff00));
 	struct rdma_commit_t *commit =  get_commit_t(rdma_ctrl);
 	ret =  __ib_rpc(rdma_ctrl->rdma->qp,opcode,
 			(void*)rdma_ctrl->dma_buffer,sizeof(*commit),commit,sizeof(*commit));
@@ -1367,8 +1367,6 @@ int maruswap_rdma_read(struct page *page, u64 roffset)
 		rdma_ctrl = get_sub_rdma_ctrl();
 	}
 
-	check = stage_buffer_load(rdma_ctrl->stage_buffer,page,offset);
-
 	rdma_info = get_rdma_info(rdma_ctrl,(roffset >>30));
 		
 	ret = get_req_for_page(rdma_ctrl->rdma->device,&dma,page,DMA_BIDIRECTIONAL);
@@ -1376,33 +1374,27 @@ int maruswap_rdma_read(struct page *page, u64 roffset)
 		pr_err("Unable to get page for dma\n");
 		return ret;
 	}
-
-	if(!check){
-		ret = __ib_rdma_send(rdma_ctrl->rdma->qp,dma,0x0,IB_WR_RDMA_READ,
-				rdma_info,(send_offset << PAGE_SHIFT),DMA_BIDIRECTIONAL);
-		if(unlikely(ret)){
-			pr_err("Unable to rdma send");
-		}
-
-	}else{
+	
+	check = stage_buffer_load(rdma_ctrl->stage_buffer,page,offset);
+	if(check){
 
 		spin_lock_irqsave(rdma_ctrl->spinlock,flags);
+		
 		count = atomic_read(rdma_ctrl->batch);
 		ret = ib_rpc_qcommit_all(count);
-
 		if(unlikely(ret)){
 			pr_err("Unable to rpc Qcommit");
 			spin_unlock_irqrestore(rdma_ctrl->spinlock,flags);
 			return ret;
 		}
-		spin_unlock_irqrestore(rdma_ctrl->spinlock,flags);
+		
+		spin_unlock_irqrestore(rdma_ctrl->spinlock,flags);	
+	}
 
-		ret = __ib_rdma_send(rdma_ctrl->rdma->qp,dma,0x0,IB_WR_RDMA_READ,
-				rdma_info,(send_offset << PAGE_SHIFT),DMA_BIDIRECTIONAL);
-		if(unlikely(ret)){
-			pr_err("Unable to rdma send");
-		}
-	
+	ret = __ib_rdma_send(rdma_ctrl->rdma->qp,dma,0x0,IB_WR_RDMA_READ,
+			rdma_info,(send_offset << PAGE_SHIFT),DMA_BIDIRECTIONAL);
+	if(unlikely(ret)){
+		pr_err("Unable to rdma send");
 	}
 
 	return ret;

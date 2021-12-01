@@ -161,7 +161,7 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 		if(atomic_read(&rmh->batch) > CONFIG_BATCH)
 			debug("EROOR : config is %d\n",atomic_read(&rmh->batch));
 	}
-	
+
 	pthread_spin_lock(&mmh->lock);
 	list_for_each_entry_safe(rw,safe,&mmh->commit_list,list){
 		struct ibv_wc *wc = &rw->wc;
@@ -176,6 +176,7 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 		ib_putback_recv_work(mmh->multicast->qp,(struct recv_work*)wc->wr_id);
 		list_del_init(&rw->list);
 	}
+
 	atomic_set(&rmh->batch,0);
 	pthread_spin_unlock(&mmh->lock);
 //	debug("[ %lld] %s\n",count,__func__);
