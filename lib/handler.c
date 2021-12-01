@@ -141,7 +141,7 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 	struct recv_work* rw = NULL;
 	struct recv_work *safe = NULL;
 	bool qcommit = ((_wc->imm_data >>28) == RDMA_OPCODE_QCOMMIT);
-	u32 count = (_wc->imm_data & 0xfffff00);
+	u32 count = ((_wc->imm_data & 0xfffff00) >> 8);
 //	static unsigned long long count = 0;
 	
 	if(list_empty(&mmh->commit_list)){	
