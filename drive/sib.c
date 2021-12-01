@@ -59,12 +59,12 @@ int get_rrandom(void)
 static void stage_buffer_store(struct stage_buffer_t *stage_buffer, 
 		struct page *page, u32 offset)
 {
-	void* src_buf = page_address(page);
+	//void* src_buf = page_address(page);
 	void* dst_buf =  NULL; //stage_buffer->buffer; // + index*PAGE_SIZE;
 	unsigned long flags;
 
 	xa_lock_irqsave(&stage_buffer->check_list,flags);
-
+/*
 	if(stage_buffer_full(stage_buffer)){
 		pr_info("full sibal\n");
 		if(xa_load(&stage_buffer->check_list,offset)){
@@ -73,12 +73,12 @@ static void stage_buffer_store(struct stage_buffer_t *stage_buffer,
 		xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 		return;
 	}
-	
-	dst_buf = stage_buffer->buffer + stage_buffer->index*PAGE_SIZE;
-	stage_buffer->index = (stage_buffer->index +1)%CONFIG_BATCH;
-	memcpy(dst_buf, src_buf,PAGE_SIZE);
+*/	
+	dst_buf = stage_buffer->buffer; // + stage_buffer->index*PAGE_SIZE;
+//	stage_buffer->index = (stage_buffer->index +1)%CONFIG_BATCH;
+//	memcpy(dst_buf, src_buf,PAGE_SIZE);
 	__xa_store(&stage_buffer->check_list,offset,dst_buf,GFP_KERNEL);
-	stage_buffer_count_add(stage_buffer);
+//	stage_buffer_count_add(stage_buffer);
 
 	xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 }
@@ -87,7 +87,7 @@ static void * stage_buffer_load(struct stage_buffer_t *stage_buffer,
 		struct page *page, u32 offset)
 {
 	void* src_buf = NULL;
-	void* dst_buf = page_address(page);
+//	void* dst_buf = page_address(page);
 	unsigned long flags;
 
 	xa_lock_irqsave(&stage_buffer->check_list,flags);
@@ -96,7 +96,7 @@ static void * stage_buffer_load(struct stage_buffer_t *stage_buffer,
 		xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 		return NULL;
 	}
-	memcpy(dst_buf,src_buf,PAGE_SIZE);
+//	memcpy(dst_buf,src_buf,PAGE_SIZE);
 	xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 
 	return src_buf;
@@ -983,11 +983,32 @@ static int ib_rpc_commit_unlocked(struct rdma_ctrl_t *rdma_ctrl)
 	return ret;
 }
 
+static int ib_rpc_qcommit_unlocked(struct rdma_ctrl_t *rdma_ctrl, u32 count)
+{
+	int ret = 0;
+	u32 opcode = (OPCODE_QCOMMIT << 28 | (count & 0xfffff00));
+	struct rdma_commit_t *commit =  get_commit_t(rdma_ctrl);
+	ret =  __ib_rpc(rdma_ctrl->rdma->qp,opcode,
+			(void*)rdma_ctrl->dma_buffer,sizeof(*commit),commit,sizeof(*commit));
+	if(ret){
+		pr_err("Unable to rpc commit\n");
+	}
+	return ret;
+}
+
 int ib_rpc_commit(struct rdma_ctrl_t *rdma_ctrl)
 {
 	int ret = 0;
 	pr_info("%s",__func__);
 	ret = ib_rpc_commit_unlocked(rdma_ctrl);
+	clear_stage_buffer_addr(rdma_ctrl->stage_buffer);
+	return ret;
+}
+
+int ib_rpc_qcommit(struct rdma_ctrl_t *rdma_ctrl, u32 count)
+{
+	int ret = 0;
+	ret = ib_rpc_qcommit_unlocked(rdma_ctrl,count);
 	clear_stage_buffer_addr(rdma_ctrl->stage_buffer);
 	return ret;
 }
@@ -1002,6 +1023,30 @@ int ib_rpc_commit_all(void)
 	list_for_each_entry(rdma_ctrl,&ctrl->rdma_ctrl_list,list){
 		if(rdma_ctrl->alive){
 			tret = ib_rpc_commit_unlocked(rdma_ctrl);
+			if(unlikely(tret)){
+				pr_info("Unable to open main_rdma\n");
+			}
+			ret |= tret;
+		}
+	}
+
+	rdma_ctrl = get_main_rdma_ctrl();
+	atomic_set(rdma_ctrl->batch,0);
+	clear_stage_buffer_addr(rdma_ctrl->stage_buffer);
+
+	return ret;
+}
+
+int ib_rpc_qcommit_all(u32 count)
+{
+	struct ctrl_t * ctrl = get_ctrl();
+	struct rdma_ctrl_t *rdma_ctrl =  NULL;
+	int ret = 0;
+	int tret = 0;
+
+	list_for_each_entry(rdma_ctrl,&ctrl->rdma_ctrl_list,list){
+		if(rdma_ctrl->alive){
+			tret = ib_rpc_qcommit_unlocked(rdma_ctrl,count);
 			if(unlikely(tret)){
 				pr_info("Unable to open main_rdma\n");
 			}
@@ -1309,6 +1354,8 @@ int maruswap_rdma_read(struct page *page, u64 roffset)
 	u32 send_offset = offset & 0x3ffff;
 	u64 dma = 0;
 	struct rdma_info_t *rdma_info = NULL;
+	u32 count = 0;
+	unsigned long flags;
 
 	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
@@ -1322,21 +1369,40 @@ int maruswap_rdma_read(struct page *page, u64 roffset)
 
 	check = stage_buffer_load(rdma_ctrl->stage_buffer,page,offset);
 
-	if(!check){
+	rdma_info = get_rdma_info(rdma_ctrl,(roffset >>30));
+		
+	ret = get_req_for_page(rdma_ctrl->rdma->device,&dma,page,DMA_BIDIRECTIONAL);
+	if(unlikely(ret)){
+		pr_err("Unable to get page for dma\n");
+		return ret;
+	}
 
-		rdma_info = get_rdma_info(rdma_ctrl,(roffset >>30));
-		
-		ret = get_req_for_page(rdma_ctrl->rdma->device,&dma,page,DMA_BIDIRECTIONAL);
-		if(unlikely(ret)){
-			pr_err("Unable to get page for dma\n");
-			return ret;
-		}
-		
+	if(!check){
 		ret = __ib_rdma_send(rdma_ctrl->rdma->qp,dma,0x0,IB_WR_RDMA_READ,
 				rdma_info,(send_offset << PAGE_SHIFT),DMA_BIDIRECTIONAL);
 		if(unlikely(ret)){
 			pr_err("Unable to rdma send");
 		}
+
+	}else{
+
+		spin_lock_irqsave(rdma_ctrl->spinlock,flags);
+		count = atomic_read(rdma_ctrl->batch);
+		ret = ib_rpc_qcommit_all(count);
+
+		if(unlikely(ret)){
+			pr_err("Unable to rpc Qcommit");
+			spin_unlock_irqrestore(rdma_ctrl->spinlock,flags);
+			return ret;
+		}
+		spin_unlock_irqrestore(rdma_ctrl->spinlock,flags);
+
+		ret = __ib_rdma_send(rdma_ctrl->rdma->qp,dma,0x0,IB_WR_RDMA_READ,
+				rdma_info,(send_offset << PAGE_SHIFT),DMA_BIDIRECTIONAL);
+		if(unlikely(ret)){
+			pr_err("Unable to rdma send");
+		}
+	
 	}
 
 	return ret;
