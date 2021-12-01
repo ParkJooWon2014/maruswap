@@ -59,9 +59,12 @@ enum {
 
 struct stage_buffer_t{
 	void *buffer;
+	volatile int index;
+
 	struct xarray check_list;
 	spinlock_t lock;
-	volatile int index;
+
+	int count;
 };
 
 struct recv_work {
@@ -295,6 +298,7 @@ inline int check_rdma_info(int nr_memblock)
 	}
 	return check;
 }
+
 inline char * id_to_msg(int id)
 {
 	if(id == 0){
@@ -306,6 +310,20 @@ inline char * id_to_msg(int id)
 }
 inline struct ctrl_t *get_ctrl(void){
 	return &ctrl;
+}
+
+inline int stage_buffer_full(struct stage_buffer_t *stage_buffer)
+{
+	return (stage_buffer->count >= CONFIG_BATCH);
+}
+
+inline void stage_buffer_count_add(struct stage_buffer_t *stage_buffer)
+{
+	stage_buffer->count += 1;
+}
+inline void stage_buffer_count_reset(struct stage_buffer_t * stage_buffer)
+{
+	stage_buffer->count=0;
 }
 
 int maruswap_multicast_write(struct page *page, u64 offset);

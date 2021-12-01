@@ -30,7 +30,10 @@ module_param_string(mip,multicast_ip,INET_ADDRSTRLEN,0644);
 
 int maruswap_rdma_read(struct page *page, u64 roffset);
 int maruswap_multicast_write(struct page *page, u64 roffset);
-
+// ring_buffer overflow
+// ring buffer index overflow .....
+// batch : 1024
+// 
 
 static int init_stage_buffer(struct stage_buffer_t *stage_buffer)
 {
@@ -43,6 +46,7 @@ static int init_stage_buffer(struct stage_buffer_t *stage_buffer)
 	stage_buffer->index = 0;
 	xa_init(&stage_buffer->check_list);
 	spin_lock_init(&stage_buffer->lock);
+	stage_buffer->count= 0;
 	return ret;
 }
 
@@ -56,15 +60,26 @@ static void stage_buffer_store(struct stage_buffer_t *stage_buffer,
 		struct page *page, u32 offset)
 {
 	void* src_buf = page_address(page);
-	void* dst_buf = stage_buffer->buffer; // + index*PAGE_SIZE;
+	void* dst_buf =  NULL; //stage_buffer->buffer; // + index*PAGE_SIZE;
 	unsigned long flags;
-	int index = 0;
 
 	xa_lock_irqsave(&stage_buffer->check_list,flags);
-	dst_buf += stage_buffer->index*PAGE_SIZE;
-	stage_buffer->index = (index +1)%CONFIG_BATCH;
+
+	if(stage_buffer_full(stage_buffer)){
+		pr_info("full sibal\n");
+		if(xa_load(&stage_buffer->check_list,offset)){
+			__xa_erase(&stage_buffer->check_list,offset);
+		}
+		xa_unlock_irqrestore(&stage_buffer->check_list,flags);
+		return;
+	}
+	
+	dst_buf = stage_buffer->buffer + stage_buffer->index*PAGE_SIZE;
+	stage_buffer->index = (stage_buffer->index +1)%CONFIG_BATCH;
 	memcpy(dst_buf, src_buf,PAGE_SIZE);
 	__xa_store(&stage_buffer->check_list,offset,dst_buf,GFP_KERNEL);
+	stage_buffer_count_add(stage_buffer);
+
 	xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 }
 
@@ -92,14 +107,20 @@ void clear_stage_buffer_addr(struct stage_buffer_t *stage_buffer)
 	unsigned long  offset = 0;
 	void* ret = NULL;
 	unsigned long flags;
+	int count = 0 ;
 
 	xa_lock_irqsave(&stage_buffer->check_list,flags);
 	xa_for_each(&stage_buffer->check_list,offset,ret){
 		if(ret){
-			__xa_store(&stage_buffer->check_list,offset,NULL,GFP_KERNEL);
-			//__xa_store(&stage_buffer->check_list,offset);
+			__xa_erase(&stage_buffer->check_list,offset);
+			count ++;
 		}
 	}
+	if(count != CONFIG_BATCH){
+		pr_info("wrong count is %d\n",count);
+	}
+	stage_buffer_count_reset(stage_buffer);
+
 	xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 }
 
@@ -883,7 +904,7 @@ static int ib_rpc_open_unlocked(struct rdma_ctrl_t *rdma_ctrl, u64 roffset)
 		goto out_error;
 	}
 
-	opcode = (OPCODE_OPEN << 28) | ((roffset >> 20) << 8); 
+	opcode = (OPCODE_OPEN << 28) | ((roffset >> 12)); // 20) << 8); 
 	req_rdma_info = get_req_rdma_info(rdma_ctrl);
 
 	ret = __ib_rpc(rdma_ctrl->rdma->qp,opcode,(void*)rdma_ctrl->dma_buffer,sizeof(*req_rdma_info),
@@ -1031,8 +1052,8 @@ int __ib_multicast_send(struct ud_package_t *ud, uintptr_t dma,
 		return ret;
 	}
 
-	stage_buffer_store(stage_buffer,page,offset);
-
+//	stage_buffer_store(stage_buffer,page,offset);
+		
 	while(!done){
 
 		struct ib_wc wc;
@@ -1229,7 +1250,6 @@ int maruswap_multicast_write(struct page *page, u64 roffset)
 	u32 offset = get_offset(roffset);
 	u64 header = set_header(MULTICAST_OPCODE_FLOW,offset);
 	int nr_memblock = get_num_memblock(roffset);
-	//void *check = NULL;
 	unsigned long flags = 0;
 
 	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
@@ -1239,6 +1259,7 @@ int maruswap_multicast_write(struct page *page, u64 roffset)
 		pr_err("Unable to get page for dma\n");
 		return ret;
 	}
+
 
 	spin_lock_irqsave(rdma_ctrl->spinlock,flags);
 
@@ -1260,6 +1281,7 @@ int maruswap_multicast_write(struct page *page, u64 roffset)
 	}
 	
 	atomic_inc(rdma_ctrl->batch);
+	stage_buffer_store(rdma_ctrl->stage_buffer,page,offset);
 	spin_unlock_irqrestore(rdma_ctrl->spinlock,flags); 
 	//recommand : spinlock variable sched_ yield reschled (?) cond_reschled--> just sleep little bit: 	
 	
@@ -1274,7 +1296,6 @@ int maruswap_multicast_write(struct page *page, u64 roffset)
 
 out_error:
 	spin_unlock_irqrestore(rdma_ctrl->spinlock,flags);	
-	//	mutex_unlock(rdma_ctrl->lock);
 	return 1;
 }
 EXPORT_SYMBOL(maruswap_multicast_write);

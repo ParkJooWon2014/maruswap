@@ -197,7 +197,6 @@ void multicast_connection_die(void);
 void set_current_rdma_handler(struct rdma_memory_handler_t *rmh);
 	
 void ib_pevent(void);
-
 void ib_flow(void *src, void* dst, uint32_t offset);
 struct memory_sender_t * alloc_memory_sender();
 struct rdma_memory_handler_t *alloc_temp_rdma_memory_handler(void);

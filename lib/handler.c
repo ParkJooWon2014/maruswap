@@ -6,6 +6,22 @@
 #include "atomic.h"
 
 #include <stdlib.h>
+#include <unistd.h>
+
+/*
+ *  RPC 
+ *  --------------------  ------------------  -------------------
+ *  |31 ~ 28 : opcode(4) | 27 ~ 8 offset(20) | 7 - 0 : binder(8) |
+ *  --------------------  ------------------  -------------------
+ *  GET_PAGE_RPC
+ *
+ *  |31 ~ 28 : opcode(4) | 27 ~ 8 |
+ *
+ * multicast header :
+ *  ---------------------  -------------------
+ *  | 31 ~ 28 : opcode(4) | 27 ~ 0 offset(28) |
+ *  ---------------------  --------------------
+ * */
 
 static void __process_rdma_rpc_open(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
 {
@@ -36,6 +52,40 @@ static void __process_rdma_rpc_open(struct rdma_memory_handler_t *rmh, struct ib
 	printf("[RMDA] : {OPEN} remote_addr : %lx, rkey = %x \n ",res->remote_addr,res->rkey);
 
 }
+
+/* NOT COMPLETE........*/
+static void __process_rdma_rpc_get_page(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
+{
+	uint32_t header = wc->imm_data;
+	int nr_block = -1;
+	uint32_t offset = 0;
+	int opcode = -1 ;
+	void* page = NULL;
+	struct recv_work *rw = NULL;
+	bool check = false;
+	struct multicast_memory_handler_t *mmh = rmh->multicast_memory_handler;
+
+	if(!interpret_header(header, &opcode, &nr_block, &offset)){
+		rdma_error("Unable to interpret");
+		return;
+	}
+
+	while(!check){
+		pthread_spin_lock(&mmh->lock);
+		page = rmh->rpc_buffer + __RPC_BUFFER_SIZE;
+		list_for_each_entry(rw,&mmh->commit_list,list){
+			struct ibv_wc *wwc = &rw->wc;
+			if((wwc->imm_data & 0xfffffff) == offset){
+				memcpy(page,rw->buffer + UD_EXTRA,PAGE_SIZE);
+				check = true;
+			}
+		}
+		pthread_spin_unlock(&mmh->lock);
+	}
+
+	__ib_rdma_send(rmh->rdma,rmh->rpc_mr,page,PAGE_SIZE,header,true);	
+}
+
 
 static void __process_rdma_rpc_close(struct rdma_memory_handler_t *rdma, struct ibv_wc *wc)
 {
@@ -90,7 +140,8 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 	struct multicast_memory_handler_t *mmh = rmh->multicast_memory_handler; 
 	struct recv_work* rw = NULL;
 	struct recv_work *safe = NULL;
-//	static unsigned long long count = 0;
+	bool qcommit = ((_wc->imm_data >>28) != RDMA_OPCODE_QCOMMIT);
+	u32 count = (_wc->imm_data & 0xfffffff);
 	if(list_empty(&mmh->commit_list)){	
 		__ib_rdma_send(rmh->rdma,rmh->rpc_mr,rmh->rpc_buffer,1,_wc->imm_data,false);
 		return;
@@ -101,9 +152,15 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 		assert(1);
 	}
 
-	while(atomic_read(&rmh->batch) < CONFIG_BATCH);
-	if(atomic_read(&rmh->batch) > CONFIG_BATCH)
-		debug("EROOR : config is %d\n",atomic_read(&rmh->batch));
+	if(qcommit){
+		while(atomic_read(&rmh->batch) <= count);
+
+	}else {
+		while(atomic_read(&rmh->batch) < CONFIG_BATCH);
+		if(atomic_read(&rmh->batch) > CONFIG_BATCH)
+			debug("EROOR : config is %d\n",atomic_read(&rmh->batch));
+	}
+	
 	pthread_spin_lock(&mmh->lock);
 	list_for_each_entry_safe(rw,safe,&mmh->commit_list,list){
 		struct ibv_wc *wc = &rw->wc;
@@ -142,8 +199,11 @@ static void ib_process_rdma_completion(struct rdma_memory_handler_t *rmh, struct
 			__process_rdma_rpc_check(rmh,wc);
 			break;
 		case RDMA_OPCODE_COMMIT:
+		case RDMA_OPCODE_QCOMMIT:	
 			__process_rdma_rpc_commit(rmh,wc);
 			break;
+		case RDMA_OPCODE_GET:
+			 __process_rdma_rpc_get_page(rmh,wc);
 		default:
 			debug("Unknwon opcode rdma rpc process : %x\n",opcode);
 	}
@@ -185,11 +245,11 @@ static void __process_multicast_rpc_flow(struct multicast_memory_handler_t *mmh 
 	struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
 	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));
 	//rw->wc = *wc;
-
+	list_add_tail(&rw->list,&mmh->commit_list);
+	
 	pthread_spin_lock(&mmh->lock);
 	if(!rw->convey){
 		ib_convey_page(rmh,wc);
-		list_add_tail(&rw->list,&mmh->commit_list);
 	}
 	pthread_spin_unlock(&mmh->lock);
 

@@ -12,8 +12,8 @@
 
 #include "ib.h"
 
-
-static int maruswap_store(unsigned type, pgoff_t pageid,
+/* PAGE OFF SET */
+static int maruswap_store(unsigned type, pgoff_t pageid/*checking for it !*/,
 		struct page *page)
 {
 	if (unlikely(maruswap_multicast_write(page, pageid << PAGE_SHIFT))) {
