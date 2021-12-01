@@ -140,7 +140,7 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 	struct multicast_memory_handler_t *mmh = rmh->multicast_memory_handler; 
 	struct recv_work* rw = NULL;
 	struct recv_work *safe = NULL;
-	bool qcommit = ((_wc->imm_data >>28) != RDMA_OPCODE_QCOMMIT);
+	bool qcommit = ((_wc->imm_data >>28) == RDMA_OPCODE_QCOMMIT);
 	u32 count = (_wc->imm_data & 0xfffff00);
 //	static unsigned long long count = 0;
 	
@@ -156,7 +156,7 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 
 	if(qcommit){
 		while(atomic_read(&rmh->batch) < count);
-	}else {
+	}else{
 		while(atomic_read(&rmh->batch) < CONFIG_BATCH);
 		if(atomic_read(&rmh->batch) > CONFIG_BATCH)
 			debug("EROOR : config is %d\n",atomic_read(&rmh->batch));
