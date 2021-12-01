@@ -155,7 +155,7 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 	}
 
 	if(qcommit){
-		while(atomic_read(&rmh->batch) <= count);
+		while(atomic_read(&rmh->batch) < count);
 	}else {
 		while(atomic_read(&rmh->batch) < CONFIG_BATCH);
 		if(atomic_read(&rmh->batch) > CONFIG_BATCH)
