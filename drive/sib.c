@@ -116,10 +116,10 @@ void clear_stage_buffer_addr(struct stage_buffer_t *stage_buffer)
 			count ++;
 		}
 	}
+
 	if(count != CONFIG_BATCH){
 		pr_info("wrong count is %d\n",count);
 	}
-	stage_buffer_count_reset(stage_buffer);
 
 	xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 }
