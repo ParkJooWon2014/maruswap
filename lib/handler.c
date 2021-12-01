@@ -142,6 +142,8 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 	struct recv_work *safe = NULL;
 	bool qcommit = ((_wc->imm_data >>28) != RDMA_OPCODE_QCOMMIT);
 	u32 count = (_wc->imm_data & 0xfffffff);
+//	static unsigned long long count = 0;
+	
 	if(list_empty(&mmh->commit_list)){	
 		__ib_rdma_send(rmh->rdma,rmh->rpc_mr,rmh->rpc_buffer,1,_wc->imm_data,false);
 		return;
@@ -154,7 +156,6 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 
 	if(qcommit){
 		while(atomic_read(&rmh->batch) <= count);
-
 	}else {
 		while(atomic_read(&rmh->batch) < CONFIG_BATCH);
 		if(atomic_read(&rmh->batch) > CONFIG_BATCH)
