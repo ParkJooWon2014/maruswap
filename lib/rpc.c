@@ -80,8 +80,9 @@ bool interpret_header(const uint32_t header, int *opcode, int *nr_buffer, uint32
     }
     size_t off = ((header & 0xfffffff));
     //*offset = off;
-    *nr_buffer = (off >> (30-12));
-   *offset = off - (*nr_buffer << 18);
+	*nr_buffer = (off >> (18));
+	*offset = off & 0x3ffff; 
+	//- (*nr_buffer << 18);
 	//size_t offsett = off - (*nr_buffer << 18);
 	//*offset &= 0x1ffff;
 	//debug(" %x %x %lx\n",*nr_buffer, *offset, off&0x1ffff);

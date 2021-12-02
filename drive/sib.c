@@ -116,10 +116,10 @@ void clear_stage_buffer_addr(struct stage_buffer_t *stage_buffer)
 			count ++;
 		}
 	}
-
+	/*
 	if(count != CONFIG_BATCH){
 		pr_info("wrong count is %d\n",count);
-	}
+	}*/
 
 	xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 }
@@ -1293,7 +1293,7 @@ int maruswap_multicast_write(struct page *page, u64 roffset)
 	struct rdma_ctrl_t *rdma_ctrl = get_main_rdma_ctrl();
 	u64 dma = 0;
 	u32 offset = get_offset(roffset);
-	u64 header = set_header(MULTICAST_OPCODE_FLOW,offset);
+	u32 header = set_header(MULTICAST_OPCODE_FLOW,offset);
 	int nr_memblock = get_num_memblock(roffset);
 	unsigned long flags = 0;
 
@@ -1351,7 +1351,7 @@ int maruswap_rdma_read(struct page *page, u64 roffset)
 	struct rdma_ctrl_t *rdma_ctrl = NULL;
 	void *check = NULL;
 	u32 offset = get_offset(roffset);
-	u32 send_offset = offset & 0x3ffff;
+	u32 send_offset = (offset & 0x3ffff);
 	u64 dma = 0;
 	struct rdma_info_t *rdma_info = NULL;
 	u32 count = 0;
@@ -1377,9 +1377,8 @@ int maruswap_rdma_read(struct page *page, u64 roffset)
 	
 	check = stage_buffer_load(rdma_ctrl->stage_buffer,page,offset);
 	if(check){
-
 		spin_lock_irqsave(rdma_ctrl->spinlock,flags);
-		
+
 		count = atomic_read(rdma_ctrl->batch);
 		ret = ib_rpc_qcommit_all(count);
 		if(unlikely(ret)){
@@ -1387,7 +1386,7 @@ int maruswap_rdma_read(struct page *page, u64 roffset)
 			spin_unlock_irqrestore(rdma_ctrl->spinlock,flags);
 			return ret;
 		}
-		
+
 		spin_unlock_irqrestore(rdma_ctrl->spinlock,flags);	
 	}
 
