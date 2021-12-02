@@ -101,7 +101,7 @@ void test_multicast_send_flow(void)
 
 void test_rpc_open(void)
 {
-	struct rdma_open_t list[10];
+	struct rdma_open_t list[30];
 	struct ibv_mr *rpc_mr = NULL;
 	void *rpc_buffer = NULL;
 
@@ -161,17 +161,17 @@ void test_rpc_open(void)
 			IBV_ACCESS_REMOTE_ATOMIC);
 
 
-	for(int i = 0 ; i < 3 ; i++){
+	for(int i = 0 ; i < 30 ; i++){
 		uint32_t opcode = 0 ; 
 		opcode = (RDMA_OPCODE_OPEN << 28);
 
 		size_t soffset = ((1UL << (30)) * i);
 		uint32_t offset  = (soffset >> 12) ;
 		opcode |= offset;
-		ib_rpc(rcm.rdma,opcode,req,sizeof(*req),res,sizeof(*req),NULL);		
+		ib_rpc(rcm.rdma,opcode,req,sizeof(*req),res,sizeof(*req),mr);		
 		memcpy(list+i,res,sizeof(*req));
 		printf("[RPC] : remote addr : %lx rkey : %x\n",list[i].remote_addr,list[i].rkey);
-		sleep(1);
+		//sleep(1);
 	}
 
 
@@ -211,54 +211,56 @@ void test_rpc_open(void)
 
 	uint64_t nr_block;
 	int send_count = 0;
-
+	
 	clock_gettime(CLOCK_REALTIME, &begin);
-	static size_t batch = 0 ;
+	volatile size_t batch = 0 ;
+	for(u64 a = 3 ;a < 30; a++){
+		for(int i = 0 ; i < (1UL << 18)  ; i ++){
+			u64 roffset = ((1UL << 12) * i |  (a << 30));
+			//u32 offset = (1<< 12) *i;
+			nr_block = a;
+			uint32_t header = ((MULTICAST_OPCODE_FLOW << 28) | ((roffset>>12) & 0xfffffff));
 
-	for(int i = 0 ; i < (1UL << 18)  ; i ++){	
-		size_t offset = (1UL << 12) * i ;
-		nr_block = (offset >>30);
-		uint32_t header = ((MULTICAST_OPCODE_FLOW << 28) | (offset>>12));
-		offset -= (nr_block << 30) ;
+			rnum = rand();	
+			numlist[i %(1ul << 18)] = rnum;
 
-		rnum = rand();	
-		numlist[i] = rnum;
+			snprintf(lnum,PAGE_SIZE,"%d",rnum);
+			//		memset(lnum,rnum,PAGE_SIZE);
 
-		snprintf(lnum,PAGE_SIZE,"%d",rnum);
-		//		memset(lnum,rnum,PAGE_SIZE);
-
-		batch++;
-		clock_gettime(CLOCK_REALTIME,&write_begin);
-		if(!__ib_multicast_send(mcm.multicast,lmr,lnum,PAGE_SIZE,header)){
-			rdma_error("Oh my god");
-			return;
-		}
-		clock_gettime(CLOCK_REALTIME,&write_end);
-		interval_write_time += ((write_end.tv_sec - write_begin.tv_sec) + (write_end.tv_nsec - write_begin.tv_nsec)/ 1000000000.0);
-
-		if(batch % 100 == 0){
-			uint32_t opcode = 0 ; 
-			opcode |= (RDMA_OPCODE_COMMIT << 28);
-			ib_rpc(rcm.rdma,opcode,req,sizeof(*req),res,sizeof(*req),mr);
-			//			ib_multicast_rpc(mcm.multicast,opcode,lnum,1,lnum,1,lmr,
-			//					mcm.ah,mcm.remote_qpn,mcm.remote_qkey);
-
-			for(int i = send_count; i < batch; i++){
-				clock_gettime(CLOCK_REALTIME,&read_begin);
-				if(!__ib_rdma_read(rcm.rdma,scan_mr,scan_buffer,PAGE_SIZE,
-							(void*)list[nr_block].remote_addr + (1UL<<12)*i ,list[nr_block].rkey,false)){
-					break;
-				}
-				debug("%s\n",(char*)scan_buffer);
-				if(numlist[i] != atoi(scan_buffer)){
-					debug("==============FUCK===============\n");
-				}
-				clock_gettime(CLOCK_REALTIME,&read_end);	
-				interval_read_time += ((read_end.tv_sec - read_begin.tv_sec) + (read_end.tv_nsec - read_begin.tv_nsec)/ 1000000000.0);
+			batch++;
+			clock_gettime(CLOCK_REALTIME,&write_begin);
+			if(!__ib_multicast_send(mcm.multicast,lmr,lnum,PAGE_SIZE,header)){
+				rdma_error("Oh my god");
+				return;
 			}
-			send_count = batch;
-		}
+			clock_gettime(CLOCK_REALTIME,&write_end);
+			interval_write_time += ((write_end.tv_sec - write_begin.tv_sec) + (write_end.tv_nsec - write_begin.tv_nsec)/ 1000000000.0);
 
+			if(batch % 1024 == 0){
+				uint32_t opcode = 0 ; 
+				opcode |= (RDMA_OPCODE_COMMIT << 28);
+				ib_rpc(rcm.rdma,opcode,req,sizeof(*req),res,sizeof(*req),mr);
+				
+				for(int ia = send_count; ia < batch; ia++){
+					clock_gettime(CLOCK_REALTIME,&read_begin);
+					if(!__ib_rdma_read(rcm.rdma,scan_mr,scan_buffer,PAGE_SIZE,
+								(void*)list[nr_block].remote_addr + ia * (1UL <<12) ,list[nr_block].rkey,false)){
+						break;
+					}
+					//debug("%s\n",(char*)scan_buffer);
+					if(numlist[ia %(1UL <<18)] != atoi(scan_buffer)){
+						debug("nr_block: %ld  addr :%x\n",nr_block,ia);
+						debug("%s\n",(char*)scan_buffer);
+						debug("==============FUCK===============\n");
+						return;
+					}
+					clock_gettime(CLOCK_REALTIME,&read_end);	
+					interval_read_time += ((read_end.tv_sec - read_begin.tv_sec) + (read_end.tv_nsec - read_begin.tv_nsec)/ 1000000000.0);
+				} 
+				send_count = batch;
+		//		printf("batch_count is %d\n",batch_count++);
+			}	
+		}
 		/*
 		//printf("CHECK MESS[%d] : %s\n",i,lnum);
 		if(!__ib_rdma_read_scan(rcm.rdma,scan_mr,scan_buffer,(PAGE_SIZE+8),
@@ -271,21 +273,23 @@ void test_rpc_open(void)
 
 		U*/
 		//		debug("Inter val Time (Micro): %lf\n", (double)interval_time/1000000);
-		}
-		
-		clock_gettime(CLOCK_REALTIME, &end);
-		debug("batch is %ld\n",batch);
-		interval_time = ((end.tv_sec - begin.tv_sec) + (end.tv_nsec - begin.tv_nsec)/ 1000000000.0) ;
-		debug("[micro]write average is %lf total(sec):  %lf\n",((double)interval_write_time*1000000.0/ (1UL<<18)),(double)interval_write_time);	
-		debug("[micro]read average is %lf total(sec):  %lf\n",((double)interval_read_time*1000000.0/ (1UL<<18)),(double)interval_read_time);	
-		debug("[micro]average is %lf total(sec):  %lf\n",((double)interval_time*1000000.0/ (1UL<<18)),(double)interval_time);	
-		//	debug("count is %ld\n",batch);
+     batch = 0;
+	 send_count = 0;
+	}
 
-		ibv_dereg_mr(lmr);
-		free(lnum);
-		ibv_dereg_mr(mr);
-		free(req);
-		ibv_dereg_mr(rpc_mr);
-		munmap(rpc_buffer,RPC_BUFFER_SIZE);
-//		return;
+	clock_gettime(CLOCK_REALTIME, &end);
+	debug("batch is %ld\n",batch);
+	interval_time = ((end.tv_sec - begin.tv_sec) + (end.tv_nsec - begin.tv_nsec)/ 1000000000.0) ;
+	debug("[micro]write average is %lf total(sec):  %lf\n",((double)interval_write_time*1000000.0/ (1UL<<18)),(double)interval_write_time);	
+	debug("[micro]read average is %lf total(sec):  %lf\n",((double)interval_read_time*1000000.0/ (1UL<<18)),(double)interval_read_time);	
+	debug("[micro]average is %lf total(sec):  %lf\n",((double)interval_time*1000000.0/ (1UL<<18)),(double)interval_time);	
+	//	debug("count is %ld\n",batch);
+
+	ibv_dereg_mr(lmr);
+	free(lnum);
+	ibv_dereg_mr(mr);
+	free(req);
+	ibv_dereg_mr(rpc_mr);
+	munmap(rpc_buffer,RPC_BUFFER_SIZE);
+	//		return;
 }

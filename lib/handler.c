@@ -168,7 +168,8 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 		if(!rw->convey){
 			if(!ib_convey_page(rmh,wc)){
 				rdma_error("Unable to convey Page");
-				pthread_mutex_unlock(&rmh->memblock_lock);
+				pthread_spin_unlock(&mmh->lock);
+				//pthread_mutex_unlock(&rmh->memblock_lock);
 				break;
 			}
 		}		
