@@ -38,7 +38,7 @@ static void __process_rdma_rpc_open(struct rdma_memory_handler_t *rmh, struct ib
 		rdma_error("Unable to interpret header");
 		return;
 	}
-	
+
 	if(!rmh->memblocks[nr_block]){
 		add_memblock(rmh,nr_block);
 	}
@@ -47,7 +47,7 @@ static void __process_rdma_rpc_open(struct rdma_memory_handler_t *rmh, struct ib
 	res->rkey = (uintptr_t)rmh->memblocks[nr_block]->mr->rkey;
 
 	__ib_rdma_send(rmh->rdma,rmh->rpc_mr,rmh->rpc_buffer,sizeof(*res),header,true);
-	
+
 	pthread_mutex_unlock(&rmh->memblock_lock);
 	printf("[RMDA] : {OPEN} remote_addr : %lx, rkey = %x \n ",res->remote_addr,res->rkey);
 
@@ -113,6 +113,7 @@ static bool ib_convey_page(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
 	int opcode = -1 ;
 	struct recv_work *rw = (struct recv_work*)wc->wr_id;
 
+
 	if(!interpret_header(header, &opcode, &nr_block, &offset)){
 		rdma_error("Unable to interpret");
 		return false;
@@ -132,34 +133,37 @@ static bool ib_convey_page(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
 	__ib_convey_page(src_buffer,dst_buffer);
 	rw->convey = true;
 	atomic_inc(&rmh->batch);
-
 	return true;
 }
 
 static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct ibv_wc *_wc)
 {
+
 	struct multicast_memory_handler_t *mmh = rmh->multicast_memory_handler; 
 	struct recv_work* rw = NULL;
 	struct recv_work *safe = NULL;
 	u32 imm_data = _wc->imm_data;
 	bool qcommit = ((imm_data >>28) == RDMA_OPCODE_QCOMMIT);
 	u32 count = ((imm_data >> 8) & 0xfffff);
-//	static unsigned long long count = 0;
-	
+	//	static unsigned long long count = 0;
+
 	if(list_empty(&mmh->commit_list)){	
 		__ib_rdma_send(rmh->rdma,rmh->rpc_mr,rmh->rpc_buffer,1,_wc->imm_data,false);
 		return;
 	}
-	
+
 	if(_wc->wr_id==0){
 		debug("FFUCKK\n");
 		assert(1);
 	}
 
 	if(qcommit){
-		while(atomic_read(&rmh->batch) < count);
+		while(atomic_read(&rmh->batch) < count){
+			;}
 	}else{
-		while(atomic_read(&rmh->batch) < CONFIG_BATCH);
+		while(atomic_read(&rmh->batch) < CONFIG_BATCH){
+			sleep(1);
+		}
 		if(atomic_read(&rmh->batch) > CONFIG_BATCH)
 			debug("EROOR : config is %d\n",atomic_read(&rmh->batch));
 	}
@@ -182,14 +186,14 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 
 	atomic_set(&rmh->batch,0);
 	pthread_spin_unlock(&mmh->lock);
-//	debug("[ %lld] %s\n",count,__func__);
+	//	debug("[ %lld] %s\n",count,__func__);
 	__ib_rdma_send(rmh->rdma,rmh->rpc_mr,rmh->rpc_buffer,1,_wc->imm_data,true);
 }
 
 static void ib_process_rdma_completion(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
 {
 	int opcode = ib_get_opcode(wc);	
-	
+
 	switch(opcode){
 		case RDMA_OPCODE_OPEN:
 			__process_rdma_rpc_open(rmh,wc);
@@ -208,7 +212,7 @@ static void ib_process_rdma_completion(struct rdma_memory_handler_t *rmh, struct
 			__process_rdma_rpc_commit(rmh,wc);
 			break;
 		case RDMA_OPCODE_GET:
-			 __process_rdma_rpc_get_page(rmh,wc);
+			__process_rdma_rpc_get_page(rmh,wc);
 		default:
 			debug("Unknwon opcode rdma rpc process : %x\n",opcode);
 	}
@@ -225,7 +229,7 @@ static void __process_multicast_rpc_commit(struct multicast_memory_handler_t *mm
 		__ib_rdma_send(rmh->rdma,rmh->rpc_mr,rmh->rpc_buffer,1,_wc->imm_data,false);
 		return;
 	}
-	
+
 	list_for_each_entry(rw,&mmh->commit_list,list){
 		struct ibv_wc *wc = &rw->wc;
 		if(!ib_convey_page(rmh,wc)){
@@ -235,7 +239,7 @@ static void __process_multicast_rpc_commit(struct multicast_memory_handler_t *mm
 	}
 	__ib_multicast_send_detail(mmh->multicast,rmh->rpc_mr,rmh->rpc_mr->addr,1,_wc->imm_data,mmh->multicast_ah
 			,mmh->remote_qpn,mmh->remote_qkey);
-	
+
 	list_for_each_entry_safe(rw,safe,&mmh->commit_list,list){	
 		list_del(&rw->list);
 		ib_putback_recv_work(mmh->multicast->qp,(struct recv_work*)rw->wc.wr_id);
@@ -244,14 +248,14 @@ static void __process_multicast_rpc_commit(struct multicast_memory_handler_t *mm
 
 static void __process_multicast_rpc_flow(struct multicast_memory_handler_t *mmh ,struct ibv_wc *wc)
 {
-//	int ret = 0;
+	//	int ret = 0;
 
 	struct recv_work *rw = (struct recv_work *)wc->wr_id;
 	struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
 	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));
 	list_add_tail(&rw->list,&mmh->commit_list);
 	//rw->wc = *wc;
-	
+
 	pthread_spin_lock(&mmh->lock);
 	if(!rw->convey){
 		ib_convey_page(rmh,wc);
@@ -284,26 +288,26 @@ static void ib_process_multicast_completion(struct multicast_memory_handler_t *m
 		case MULTICAST_OPCODE_NONE :
 			break;
 		default:
-			debug("Unknwon opcode rdma rpc process : %x\n",opcode);
+			debug("Unknwon opcode multicast process : %x\n",opcode);
 	}
 
 }
 
 static void* rdma_memory_thread(void *context)
 {
-	
+
 	struct rdma_memory_handler_t* rmh = context;
 	struct ibv_cq *recv_cq  = rmh->rdma->recv_cq;
-	
+
 	while(*rmh->keep){
-		
+
 		int nr_completed;
 		struct ibv_wc wc;
 
 		nr_completed = ibv_poll_cq(recv_cq,1,&wc);
 		if(nr_completed == 0) continue;
 		else if(nr_completed < 0) break;
-		
+
 		if(wc.status != IBV_WC_SUCCESS){
 			debug("rdma work completion status %s\n",
 					ibv_wc_status_str(wc.status));
@@ -313,12 +317,34 @@ static void* rdma_memory_thread(void *context)
 		
 		ib_process_rdma_completion(rmh,&wc);
 		ib_putback_recv_work(rmh->rdma->qp,(struct recv_work *)wc.wr_id);
-		
 	}
 	rdma_connection_die();
 	return NULL;
 }
 
+void *process_multicast_memory_work(void* context)
+{
+	debug("Multicast memwork thread wakeup\n");
+	struct multicast_memory_handler_t *mmh = context;
+	struct recv_work *rw = NULL;
+	struct recv_work *safe ;
+	int ret;
+	//static long long count = 0 ;
+	while(1){
+
+		//rw = list_first_entry_or_null(&mmh->work_list,struct recv_work,list);
+		ret = pthread_spin_trylock(&mmh->work_lock);
+		if(!ret){
+			list_for_each_entry_safe(rw,safe,&mmh->work_list,list){
+				list_del_init(&rw->list);
+				ib_process_multicast_completion(mmh,&rw->wc);
+				}
+		}else continue;
+		pthread_spin_unlock(&mmh->work_lock);
+	}
+
+	return NULL;
+}
 
 void* multicast_memory_thread(void *context)
 {
@@ -328,8 +354,13 @@ void* multicast_memory_thread(void *context)
 	struct ibv_cq *recv_cq  = mmh->multicast->recv_cq;	
 	*mmh->realloc = true;
 
+	for(int i = 0 ; i < NR_WORKER ; i++){
+		pthread_create(mmh->process_thread+i,NULL,process_multicast_memory_work,mmh);	
+	}
+
 	while(*mmh->keep){
-		
+
+		struct recv_work *rw = NULL;
 		int nr_completed;
 		struct ibv_wc wc;
 
@@ -343,8 +374,12 @@ void* multicast_memory_thread(void *context)
 			break;
 		}
 		
-		ib_process_multicast_completion(mmh,&wc);
-		
+		rw = (struct recv_work*)wc.wr_id;
+		memcpy(&rw->wc,&wc,sizeof(wc));
+		pthread_spin_lock(&mmh->work_lock);
+		list_add_tail(&rw->list,&mmh->work_list);
+		pthread_spin_unlock(&mmh->work_lock);
+		//	ib_process_multicast_completion(mmh,&wc);
 	}
 
 	multicast_connection_die();
@@ -361,7 +396,7 @@ bool init_handlers(struct rdma_cm_event *event)
 		rdma_error("Unable to alloc rdma memory handler");
 		return false;
 	}
-	
+
 	struct multicast_memory_handler_t *mmh =
 		alloc_multicast_memory_handler();
 

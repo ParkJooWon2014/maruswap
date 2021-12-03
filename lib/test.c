@@ -257,8 +257,12 @@ void test_rpc_open(void)
 					interval_read_time += ((read_end.tv_sec - read_begin.tv_sec) + (read_end.tv_nsec - read_begin.tv_nsec)/ 1000000000.0);
 				}
 				send_count = batch;
-				printf("batch_count is %ld\n",batch);
 			}	
+		//		printf("batch_count is %d\n",batch_count++);
+		//	}
+			
+		printf("batch_count is %ld\n",batch);
+		send_count = batch = 0;
 		}
 		/*
 		//printf("CHECK MESS[%d] : %s\n",i,lnum);
