@@ -125,6 +125,7 @@ static bool ib_convey_page(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
 		}
 		printf("add block is completed!\n");
 	}
+
 	// barrier 
 	src_buffer = rw->buffer + UD_EXTRA;
 	dst_buffer = rmh->memblocks[nr_block]->buffer + (offset << 12);
@@ -140,8 +141,9 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 	struct multicast_memory_handler_t *mmh = rmh->multicast_memory_handler; 
 	struct recv_work* rw = NULL;
 	struct recv_work *safe = NULL;
-	bool qcommit = ((_wc->imm_data >>28) == RDMA_OPCODE_QCOMMIT);
-	u32 count = ((_wc->imm_data >> 8) & 0xfffff);
+	u32 imm_data = _wc->imm_data;
+	bool qcommit = ((imm_data >>28) == RDMA_OPCODE_QCOMMIT);
+	u32 count = ((imm_data >> 8) & 0xfffff);
 //	static unsigned long long count = 0;
 	
 	if(list_empty(&mmh->commit_list)){	
@@ -247,8 +249,8 @@ static void __process_multicast_rpc_flow(struct multicast_memory_handler_t *mmh 
 	struct recv_work *rw = (struct recv_work *)wc->wr_id;
 	struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
 	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));
-	//rw->wc = *wc;
 	list_add_tail(&rw->list,&mmh->commit_list);
+	//rw->wc = *wc;
 	
 	pthread_spin_lock(&mmh->lock);
 	if(!rw->convey){

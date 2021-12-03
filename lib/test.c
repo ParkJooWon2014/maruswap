@@ -236,7 +236,7 @@ void test_rpc_open(void)
 			clock_gettime(CLOCK_REALTIME,&write_end);
 			interval_write_time += ((write_end.tv_sec - write_begin.tv_sec) + (write_end.tv_nsec - write_begin.tv_nsec)/ 1000000000.0);
 
-			if(batch % 1024 == 0){
+			if(batch % CONFIG_BATCH == 0){
 				uint32_t opcode = 0 ; 
 				opcode |= (RDMA_OPCODE_COMMIT << 28);
 				ib_rpc(rcm.rdma,opcode,req,sizeof(*req),res,sizeof(*req),mr);
