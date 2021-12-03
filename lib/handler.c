@@ -251,17 +251,17 @@ static void __process_multicast_rpc_flow(struct multicast_memory_handler_t *mmh 
 	//	int ret = 0;
 
 	struct recv_work *rw = (struct recv_work *)wc->wr_id;
-	struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
+	//struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
 	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));
 	list_add_tail(&rw->list,&mmh->commit_list);
 	//rw->wc = *wc;
-
+/*
 	pthread_spin_lock(&mmh->lock);
 	if(!rw->convey){
 		ib_convey_page(rmh,wc);
 	}
 	pthread_spin_unlock(&mmh->lock);
-
+*/
 }
 
 
@@ -353,14 +353,15 @@ void* multicast_memory_thread(void *context)
 	struct multicast_memory_handler_t* mmh = context;
 	struct ibv_cq *recv_cq  = mmh->multicast->recv_cq;	
 	*mmh->realloc = true;
-
+	
+	/*
 	for(int i = 0 ; i < NR_WORKER ; i++){
 		pthread_create(mmh->process_thread+i,NULL,process_multicast_memory_work,mmh);	
 	}
-
+	*/
 	while(*mmh->keep){
 
-		struct recv_work *rw = NULL;
+		//struct recv_work *rw = NULL;
 		int nr_completed;
 		struct ibv_wc wc;
 
@@ -374,12 +375,14 @@ void* multicast_memory_thread(void *context)
 			break;
 		}
 		
-		rw = (struct recv_work*)wc.wr_id;
-		memcpy(&rw->wc,&wc,sizeof(wc));
-		pthread_spin_lock(&mmh->work_lock);
-		list_add_tail(&rw->list,&mmh->work_list);
-		pthread_spin_unlock(&mmh->work_lock);
 		//	ib_process_multicast_completion(mmh,&wc);
+
+		//rw = (struct recv_work*)wc.wr_id;
+		//memcpy(&rw->wc,&wc,sizeof(wc));
+		//pthread_spin_lock(&mmh->work_lock);
+		//list_add_tail(&rw->list,&mmh->work_list);
+		//pthread_spin_unlock(&mmh->work_lock);
+		ib_process_multicast_completion(mmh,&wc);
 	}
 
 	multicast_connection_die();
