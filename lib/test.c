@@ -259,7 +259,8 @@ void test_rpc_open(void)
 				} 
 				send_count = batch;
 		//		printf("batch_count is %d\n",batch_count++);
-			}	
+			}
+			send_count = batch = 0;
 		}
 		/*
 		//printf("CHECK MESS[%d] : %s\n",i,lnum);

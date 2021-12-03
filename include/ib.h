@@ -65,6 +65,8 @@ struct rdma_memory_handler_t{
 
 	pthread_barrier_t *barrier;
 	atomic_t batch;
+
+	struct list_head work_list;
 };
 
 struct multicast_memory_handler_t{
@@ -87,11 +89,14 @@ struct multicast_memory_handler_t{
 
 	bool *realloc;
 	pthread_t thread_id[NR_RECVER];
+	pthread_t process_thread[NR_WORKER];
 
 	struct work_completion_t *work_completion;
 	struct list_head commit_list;
 
+	pthread_spinlock_t work_lock;
 	pthread_spinlock_t lock;
+	struct list_head work_list;
 };
 
 struct rdma_connection_manager_t {	

@@ -116,7 +116,7 @@ bool ib_rpc(struct rdma_cm_id *id, int opcode, void *req, size_t req_size, void 
 	}
 
 	wr.send_flags |= IBV_SEND_SIGNALED;
-	
+
 	ibv_post_send(id->qp, &wr, &bad_wr);
 	assert(!bad_wr);
 	
