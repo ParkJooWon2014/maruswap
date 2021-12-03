@@ -214,7 +214,7 @@ void test_rpc_open(void)
 	
 	clock_gettime(CLOCK_REALTIME, &begin);
 	volatile size_t batch = 0 ;
-	for(u64 a = 3 ;a < 30; a++){
+	for(u64 a = 0 ;a < 30; a++){
 		for(int i = 0 ; i < (1UL << 18)  ; i ++){
 			u64 roffset = ((1UL << 12) * i |  (a << 30));
 			//u32 offset = (1<< 12) *i;
@@ -236,11 +236,10 @@ void test_rpc_open(void)
 			clock_gettime(CLOCK_REALTIME,&write_end);
 			interval_write_time += ((write_end.tv_sec - write_begin.tv_sec) + (write_end.tv_nsec - write_begin.tv_nsec)/ 1000000000.0);
 
-			if(batch % CONFIG_BATCH == 0){
-				uint32_t opcode = 0 ; 
+			if(batch  % CONFIG_BATCH == 0){
+				uint32_t opcode = 0; 
 				opcode |= (RDMA_OPCODE_COMMIT << 28);
 				ib_rpc(rcm.rdma,opcode,req,sizeof(*req),res,sizeof(*req),mr);
-				
 				for(int ia = send_count; ia < batch; ia++){
 					clock_gettime(CLOCK_REALTIME,&read_begin);
 					if(!__ib_rdma_read(rcm.rdma,scan_mr,scan_buffer,PAGE_SIZE,
@@ -256,9 +255,9 @@ void test_rpc_open(void)
 					}
 					clock_gettime(CLOCK_REALTIME,&read_end);	
 					interval_read_time += ((read_end.tv_sec - read_begin.tv_sec) + (read_end.tv_nsec - read_begin.tv_nsec)/ 1000000000.0);
-				} 
+				}
 				send_count = batch;
-		//		printf("batch_count is %d\n",batch_count++);
+				printf("batch_count is %ld\n",batch);
 			}	
 		}
 		/*

@@ -310,12 +310,15 @@ static void* rdma_memory_thread(void *context)
 			break;
 		}
 
+		
 		ib_process_rdma_completion(rmh,&wc);
 		ib_putback_recv_work(rmh->rdma->qp,(struct recv_work *)wc.wr_id);
+		
 	}
 	rdma_connection_die();
 	return NULL;
 }
+
 
 void* multicast_memory_thread(void *context)
 {
@@ -324,7 +327,7 @@ void* multicast_memory_thread(void *context)
 	struct multicast_memory_handler_t* mmh = context;
 	struct ibv_cq *recv_cq  = mmh->multicast->recv_cq;	
 	*mmh->realloc = true;
-	
+
 	while(*mmh->keep){
 		
 		int nr_completed;
@@ -339,7 +342,9 @@ void* multicast_memory_thread(void *context)
 					ibv_wc_status_str(wc.status));
 			break;
 		}
+		
 		ib_process_multicast_completion(mmh,&wc);
+		
 	}
 
 	multicast_connection_die();
