@@ -16,7 +16,7 @@
 static int maruswap_store(unsigned type, pgoff_t pageid/*checking for it !*/,
 		struct page *page)
 {
-	if (unlikely(maruswap_multicast_write(page, pageid << PAGE_SHIFT))) {
+	if (unlikely(maruswap_multicast_write(page, pageid))) {
 		pr_err("could not store page remotely\n");
 		return -1;
 	}
@@ -27,7 +27,7 @@ static int maruswap_store(unsigned type, pgoff_t pageid/*checking for it !*/,
 static int maruswap_load(unsigned type, pgoff_t pageid, struct page *page)
 {
 	
-	if (unlikely(maruswap_rdma_read(page, pageid << PAGE_SHIFT))) {
+	if (unlikely(maruswap_rdma_read(page, pageid))) {
 		pr_err("could not read page remotely\n");
 		return -1;
 	}

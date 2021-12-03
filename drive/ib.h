@@ -34,7 +34,7 @@ enum {
 	NR_SERVER = 2,
 	BUFFER_SIZE = (1UL <<  5),
 
-	CONFIG_BATCH = (1UL << 9),
+	CONFIG_BATCH = (1UL << 10),
 	CONFIG_NR_STAGE_BUFFER = CONFIG_BATCH,
 
 	CONNECTION_TIMEOUT_MS = 60000,
@@ -241,7 +241,7 @@ inline u32 get_offset(const u64 roffset){
 	return ((roffset >> PAGE_SHIFT) & 0xfffffff);
 }
 inline u32 set_header(int opcode, const u32 offset){
-	return ((opcode << 28) | offset);
+	return (((opcode << 28) | (offset & 0xfffffff)) & 0xffffffff);
 }
 inline struct rdma_info_t *get_rdma_info(struct rdma_ctrl_t *rmt, int num){
 	return (rmt->rdma_info + num);
@@ -327,8 +327,8 @@ inline void stage_buffer_count_reset(struct stage_buffer_t * stage_buffer)
 	stage_buffer->count=0;
 }
 
-int maruswap_multicast_write(struct page *page, u64 offset);
-int maruswap_rdma_read(struct page *page, u64 offset);
+int maruswap_multicast_write(struct page *page, u32 offset);
+int maruswap_rdma_read(struct page *page, u32 offset);
 
 
 #endif
