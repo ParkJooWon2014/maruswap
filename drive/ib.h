@@ -272,9 +272,9 @@ inline struct multicast_ctrl_t *get_multicast_ctrl(void)
 {
 	return &ctrl.multicast_ctrl;
 }
-inline int get_num_memblock(const u64 roffset)
+inline int get_num_memblock(const u32 offset)
 {
-	return ((roffset >>30) & 0x3ff);
+	return ((offset >>18) & 0x3ff);
 }
 inline struct rdma_commit_t *get_commit_t(struct rdma_ctrl_t *rdma_ctrl)
 {

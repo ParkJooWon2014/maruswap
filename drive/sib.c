@@ -28,8 +28,8 @@ module_param_string(myip,src_ip,INET_ADDRSTRLEN,0644);
 module_param_string(mip,multicast_ip,INET_ADDRSTRLEN,0644);
 
 
-int maruswap_rdma_read(struct page *page, u64 roffset);
-int maruswap_multicast_write(struct page *page, u64 roffset);
+int maruswap_rdma_read(struct page *page, u32 roffset);
+int maruswap_multicast_write(struct page *page, u32 roffset);
 
 // ring_buffer overflow
 // ring buffer index overflow .....
@@ -94,9 +94,10 @@ static void * stage_buffer_load(struct stage_buffer_t *stage_buffer,
 	xa_lock_irqsave(&stage_buffer->check_list,flags);
 	src_buf = xa_load(&stage_buffer->check_list,offset);
 	if(!src_buf){
+		pr_info("nr_block %d offset %x send_offset %x\n",offset >> 18,offset,offset &0x3ffff);
 		xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 		return NULL;
-		}
+	}
 	memcpy(dst_buf,src_buf,PAGE_SIZE);
 	xa_unlock_irqrestore(&stage_buffer->check_list,flags);
 
@@ -887,10 +888,10 @@ static int __ib_rpc(struct ib_qp *qp, uint32_t opcode,
 	return 0;
 }
 
-static int ib_rpc_open_unlocked(struct rdma_ctrl_t *rdma_ctrl, u64 roffset)
+static int ib_rpc_open_unlocked(struct rdma_ctrl_t *rdma_ctrl, u32 offset)
 {
 	int ret = 0;
-	int moffset = get_num_memblock(roffset);
+	int moffset = get_num_memblock(offset);
 	u32 opcode = 0x0;
 	struct rdma_info_t *req_rdma_info = NULL;
 
@@ -898,7 +899,7 @@ static int ib_rpc_open_unlocked(struct rdma_ctrl_t *rdma_ctrl, u64 roffset)
 		goto out_error;
 	}
 
-	opcode = (OPCODE_OPEN << 28) | ((roffset >> 12)); // 20) << 8); 
+	opcode = (OPCODE_OPEN << 28) | (offset); // 20) << 8); 
 	req_rdma_info = get_req_rdma_info(rdma_ctrl);
 
 	ret = __ib_rpc(rdma_ctrl->rdma->qp,opcode,(void*)rdma_ctrl->dma_buffer,sizeof(*req_rdma_info),
@@ -917,14 +918,14 @@ out_error:
 	return ret;
 }
 
-int ib_rpc_open(struct rdma_ctrl_t *rdma_ctrl, u64 roffset)
+int ib_rpc_open(struct rdma_ctrl_t *rdma_ctrl, u32 offset)
 {
 	int ret = 0;
-	ret = ib_rpc_open_unlocked(rdma_ctrl,roffset);
+	ret = ib_rpc_open_unlocked(rdma_ctrl,offset);
 	return ret;
 }
 
-int ib_rpc_open_all(u64 roffset)
+int ib_rpc_open_all(u32 offset)
 {
 	struct rdma_ctrl_t *rdma_ctrl = get_main_rdma_ctrl();
 	struct rdma_ctrl_t *sub_rdma_ctrl = get_sub_rdma_ctrl();
@@ -933,7 +934,7 @@ int ib_rpc_open_all(u64 roffset)
 	int tret = 0;
 
 	if(sub_rdma_ctrl->alive){
-		tret = ib_rpc_open_unlocked(sub_rdma_ctrl,roffset);
+		tret = ib_rpc_open_unlocked(sub_rdma_ctrl,offset);
 		if(unlikely(tret)){
 			pr_info("Unable to open main_rdma\n");
 		}
@@ -942,7 +943,7 @@ int ib_rpc_open_all(u64 roffset)
 	ret |= tret;
 
 	if(rdma_ctrl->alive){
-		tret = ib_rpc_open_unlocked(rdma_ctrl,roffset);
+		tret = ib_rpc_open_unlocked(rdma_ctrl,offset);
 		if(unlikely(tret)){
 			pr_info("Unable to open main_rdma\n");
 		}
@@ -1286,8 +1287,8 @@ int maruswap_multicast_write(struct page *page, u32 offset)
 	struct multicast_ctrl_t *multicast_ctrl = get_multicast_ctrl();
 	struct rdma_ctrl_t *rdma_ctrl = get_main_rdma_ctrl();
 	u64 dma = 0;
-	u32 header = ((MULTICAST_OPCODE_FLOW<<28) | ((roffset>>12) & 0xfffffff)); //set_header(MULTICAST_OPCODE_FLOW,offset);
-	int nr_memblock = get_num_memblock(roffset);
+	u32 header = ((MULTICAST_OPCODE_FLOW<<28) | (offset & 0xfffffff)); //set_header(MULTICAST_OPCODE_FLOW,offset);
+	int nr_memblock = get_num_memblock(offset);
 	unsigned long flags = 0;
 
 	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
@@ -1301,7 +1302,7 @@ int maruswap_multicast_write(struct page *page, u32 offset)
 	spin_lock_irqsave(rdma_ctrl->spinlock,flags);
 
 	if(check_rdma_info(nr_memblock)){
-		ret = ib_rpc_open_all(roffset);
+		ret = ib_rpc_open_all(offset);
 		if(unlikely(ret)){
 			pr_err("Unable to rpc open\n");
 			goto out_error;
@@ -1346,7 +1347,7 @@ int maruswap_rdma_read(struct page *page, u32 offset)
 	u64 dma = 0;
 	struct rdma_info_t *rdma_info = NULL;
 	//u32 count = 0;
-	int nr_memblock = get_num_memblock(roffset);
+	int nr_memblock = get_num_memblock(offset);
 	//unsigned long flags;
 	
 	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
