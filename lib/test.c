@@ -239,6 +239,7 @@ void test_rpc_open(void)
 			if(batch  % CONFIG_BATCH == 0){
 				uint32_t opcode = 0; 
 				opcode |= (RDMA_OPCODE_COMMIT << 28);
+				debug("_____--=====\n");
 				ib_rpc(rcm.rdma,opcode,req,sizeof(*req),res,sizeof(*req),mr);
 				for(int ia = send_count; ia < batch; ia++){
 					clock_gettime(CLOCK_REALTIME,&read_begin);
