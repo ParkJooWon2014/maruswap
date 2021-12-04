@@ -214,7 +214,7 @@ void test_rpc_open(void)
 	
 	clock_gettime(CLOCK_REALTIME, &begin);
 	volatile size_t batch = 0 ;
-	for(u64 a = 3 ;a < 30; a++){
+	for(u64 a = 0 ;a < 1; a++){
 		for(int i = 0 ; i < (1UL << 18)  ; i ++){
 			u64 roffset = ((1UL << 12) * i |  (a << 30));
 			//u32 offset = (1<< 12) *i;
@@ -239,6 +239,7 @@ void test_rpc_open(void)
 			if(batch % CONFIG_BATCH == 0){
 				uint32_t opcode = 0 ; 
 				opcode |= (RDMA_OPCODE_COMMIT << 28);
+				debug("_____--=====\n");
 				ib_rpc(rcm.rdma,opcode,req,sizeof(*req),res,sizeof(*req),mr);
 				
 				for(int ia = send_count; ia < batch; ia++){

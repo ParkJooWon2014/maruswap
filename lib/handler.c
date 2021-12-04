@@ -132,7 +132,7 @@ static bool ib_convey_page(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
 	dst_buffer = rmh->memblocks[nr_block]->buffer + (offset << 12);
 	__ib_convey_page(src_buffer,dst_buffer);
 	rw->convey = true;
-	atomic_inc(&rmh->batch);
+//	atomic_inc(&rmh->batch);
 	return true;
 }
 
@@ -158,15 +158,13 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 	}
 
 	if(qcommit){
-		while(atomic_read(&rmh->batch) < count){
-			;}
+		while(atomic_read(&rmh->batch) < count);
 	}else{
-		while(atomic_read(&rmh->batch) < CONFIG_BATCH){
-			sleep(1);
-		}
+		while(atomic_read(&rmh->batch) < CONFIG_BATCH);
 		if(atomic_read(&rmh->batch) > CONFIG_BATCH)
 			debug("EROOR : config is %d\n",atomic_read(&rmh->batch));
 	}
+
 
 	pthread_spin_lock(&mmh->lock);
 	list_for_each_entry_safe(rw,safe,&mmh->commit_list,list){
@@ -183,7 +181,6 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 		ib_putback_recv_work(mmh->multicast->qp,(struct recv_work*)wc->wr_id);
 		list_del_init(&rw->list);
 	}
-
 	atomic_set(&rmh->batch,0);
 	pthread_spin_unlock(&mmh->lock);
 	//	debug("[ %lld] %s\n",count,__func__);
@@ -251,8 +248,9 @@ static void __process_multicast_rpc_flow(struct multicast_memory_handler_t *mmh 
 	//	int ret = 0;
 
 	struct recv_work *rw = (struct recv_work *)wc->wr_id;
-	//struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
-	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));
+	struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
+	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));	
+	atomic_inc(&rmh->batch);
 	list_add_tail(&rw->list,&mmh->commit_list);
 	//rw->wc = *wc;
 /*
@@ -313,7 +311,7 @@ static void* rdma_memory_thread(void *context)
 					ibv_wc_status_str(wc.status));
 			break;
 		}
-
+		printf("????\n");
 		ib_process_rdma_completion(rmh,&wc);
 		ib_putback_recv_work(rmh->rdma->qp,(struct recv_work *)wc.wr_id);
 
