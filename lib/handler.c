@@ -249,17 +249,20 @@ static void __process_multicast_rpc_flow(struct multicast_memory_handler_t *mmh 
 
 	struct recv_work *rw = (struct recv_work *)wc->wr_id;
 	struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
-	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));	
+	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));
+	
+	pthread_spin_lock(&mmh->lock);
 	atomic_inc(&rmh->batch);
+	pthread_spin_unlock(&mmh->lock);
 	list_add_tail(&rw->list,&mmh->commit_list);
 	//rw->wc = *wc;
-/*
-	pthread_spin_lock(&mmh->lock);
-	if(!rw->convey){
-		ib_convey_page(rmh,wc);
-	}
-	pthread_spin_unlock(&mmh->lock);
-*/
+
+//	pthread_spin_lock(&mmh->lock);
+//	if(!rw->convey){
+//		ib_convey_page(rmh,wc);
+//	}
+//	pthread_spin_unlock(&mmh->lock);
+
 }
 
 
