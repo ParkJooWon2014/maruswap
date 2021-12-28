@@ -113,6 +113,7 @@ static bool ib_convey_page(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
 	int opcode = -1 ;
 	struct recv_work *rw = (struct recv_work*)wc->wr_id;
 
+	static long long count = 0;
 
 	if(!interpret_header(header, &opcode, &nr_block, &offset)){
 		rdma_error("Unable to interpret");
@@ -132,6 +133,8 @@ static bool ib_convey_page(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
 	__ib_convey_page(src_buffer,dst_buffer);
 	rw->convey = true;
 	atomic_inc(&rmh->batch);
+
+	printf("count %lld nr_block %d offset %x %x  %s \n",count++,nr_block,offset,offset << 12,(char*)dst_buffer);
 	return true;
 }
 
@@ -174,7 +177,16 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 				pthread_spin_unlock(&mmh->lock);
 				break;
 			}
-		}		
+		}
+	//	rw->convey = false;
+	//
+	//	ib_putback_recv_work(mmh->multicast->qp,(struct recv_work*)wc->wr_id);
+	//	list_del_init(&rw->list);
+	}
+
+	list_for_each_entry_safe(rw,safe,&mmh->commit_list,list){	
+
+		struct ibv_wc *wc = &rw->wc;
 		rw->convey = false;
 		ib_putback_recv_work(mmh->multicast->qp,(struct recv_work*)wc->wr_id);
 		list_del_init(&rw->list);
@@ -183,6 +195,7 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 	pthread_spin_unlock(&mmh->lock);
 	//	debug("[ %lld] %s\n",count,__func__);
 	__ib_rdma_send(rmh->rdma,rmh->rpc_mr,rmh->rpc_buffer,1,_wc->imm_data,true);
+	printf("commit \n");
 }
 
 static void ib_process_rdma_completion(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
