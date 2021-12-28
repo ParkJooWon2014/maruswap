@@ -79,7 +79,7 @@ bool interpret_header(const uint32_t header, int *opcode, int *nr_buffer, uint32
         return false;
     }
     size_t off = ((header & 0xfffffff));
-	*nr_buffer = ((off >> (18)) & 0x7f);
+	*nr_buffer = ((off >> (18)) & 0xfff);
 	*offset = off & 0x3ffff; 
 	//- (*nr_buffer << 18);
 	//size_t offsett = off - (*nr_buffer << 18)

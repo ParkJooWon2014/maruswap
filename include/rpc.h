@@ -39,7 +39,7 @@ enum{
 	MULTICAST_OPCODE_COMMIT =0x3,
 	MULTICAST_OPCODE_NONE = 0xf,
 
-	CONFIG_BATCH = (1UL << 10),
+	CONFIG_BATCH = (1UL << 9),
 };
 
 struct recv_work {

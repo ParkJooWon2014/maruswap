@@ -126,13 +126,12 @@ static bool ib_convey_page(struct rdma_memory_handler_t *rmh, struct ibv_wc *wc)
 		}
 		printf("add block is completed!\n");
 	}
-
 	// barrier 
 	src_buffer = rw->buffer + UD_EXTRA;
 	dst_buffer = rmh->memblocks[nr_block]->buffer + (offset << 12);
 	__ib_convey_page(src_buffer,dst_buffer);
 	rw->convey = true;
-//	atomic_inc(&rmh->batch);
+	atomic_inc(&rmh->batch);
 	return true;
 }
 
@@ -173,7 +172,6 @@ static void __process_rdma_rpc_commit(struct rdma_memory_handler_t *rmh, struct 
 			if(!ib_convey_page(rmh,wc)){
 				rdma_error("Unable to convey Page");
 				pthread_spin_unlock(&mmh->lock);
-				//pthread_mutex_unlock(&rmh->memblock_lock);
 				break;
 			}
 		}		
@@ -250,18 +248,13 @@ static void __process_multicast_rpc_flow(struct multicast_memory_handler_t *mmh 
 	struct recv_work *rw = (struct recv_work *)wc->wr_id;
 	struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
 	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));
-	
-	pthread_spin_lock(&mmh->lock);
-	atomic_inc(&rmh->batch);
-	pthread_spin_unlock(&mmh->lock);
-	list_add_tail(&rw->list,&mmh->commit_list);
-	//rw->wc = *wc;
 
-//	pthread_spin_lock(&mmh->lock);
-//	if(!rw->convey){
-//		ib_convey_page(rmh,wc);
-//	}
-//	pthread_spin_unlock(&mmh->lock);
+	pthread_spin_lock(&mmh->lock);
+	list_add(&rw->list,&mmh->commit_list);
+	if(!rw->convey){
+		ib_convey_page(rmh,wc);
+	}
+	pthread_spin_unlock(&mmh->lock);
 
 }
 
@@ -337,8 +330,9 @@ void *process_multicast_memory_work(void* context)
 			list_for_each_entry_safe(rw,safe,&mmh->work_list,list){
 				list_del_init(&rw->list);
 				ib_process_multicast_completion(mmh,&rw->wc);
-				}
+			}
 		}else continue;
+
 		pthread_spin_unlock(&mmh->work_lock);
 	}
 
