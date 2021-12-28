@@ -13,7 +13,7 @@ enum {
 	NR_RECVER = 1,
 	NR_WORKER = 1,
 
-	PRE_ALLOC_MEMBLOCK = 30,
+	PRE_ALLOC_MEMBLOCK = 1,
 };
 
 #endif 

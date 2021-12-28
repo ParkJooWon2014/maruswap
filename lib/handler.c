@@ -248,9 +248,9 @@ static void __process_multicast_rpc_flow(struct multicast_memory_handler_t *mmh 
 	struct recv_work *rw = (struct recv_work *)wc->wr_id;
 	struct rdma_memory_handler_t * rmh = mmh->rdma_memory_handler;
 	memcpy(&rw->wc,wc,sizeof(struct ibv_wc));
+	list_add(&rw->list,&mmh->commit_list);
 
 	pthread_spin_lock(&mmh->lock);
-	list_add(&rw->list,&mmh->commit_list);
 	if(!rw->convey){
 		ib_convey_page(rmh,wc);
 	}

@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <sched.h>
-#include <time.h>
+
 #include<sys/time.h>
 
 
@@ -207,15 +207,15 @@ void test_rpc_open(void)
 	double interval_time = 0.0;
 	double interval_write_time = 0.0;
 	double interval_read_time = 0.0;
-	int numlist[CONFIG_BATCH];
-	u32 offsetlist[CONFIG_BATCH];
+	int numlist[1UL << 18];
+	u32 offsetlist[1UL <<18];
 	uint64_t nr_block;
 	int send_count = 0;
 	unsigned long long count = 0;
 	clock_gettime(CLOCK_REALTIME, &begin);
-	volatile size_t batch = 0;
-	srand(time(NULL));
-	for(int  a = 0; a < 30 ;a++){
+	volatile size_t batch = 0 ;
+	printf("AAA\n");
+	for(int  a = 0; a < 10 ;a++){
 		for(int i = 0 ; i < (1UL << 18) ; i ++){
 			//u64 roffset = ((1UL << 12) * i |  (a << 30));
 			//u32 offset = (1<< 12) *i;
@@ -223,9 +223,9 @@ void test_rpc_open(void)
 			nr_block = ((offset >>18) & 0xf); 
 			uint32_t header = ((MULTICAST_OPCODE_FLOW << 28) | (offset & 0xfffffff)); //  ((roffset>>12) & 0xfffffff));
 
-			rnum = offset;
-			numlist[i %( CONFIG_BATCH)] = rnum;
-			offsetlist[i % CONFIG_BATCH] = offset;
+			rnum = rand();	
+			numlist[i %(1ul << 18)] = rnum;
+			offsetlist[i] = offset;
 
 			snprintf(lnum,PAGE_SIZE,"%d",rnum);
 			//		memset(lnum,rnum,PAGE_SIZE);
@@ -245,32 +245,30 @@ void test_rpc_open(void)
 				ib_rpc(rcm.rdma,opcode,req,sizeof(*req),res,sizeof(*req),mr);
 				for(int ia = send_count; ia < batch; ia++){
 					clock_gettime(CLOCK_REALTIME,&read_begin);
-					nr_block = (offsetlist[ia % CONFIG_BATCH] >> 18) & 0xff;
-				//	debug("check nr_block : %ld %x %x \n",nr_block,offsetlist[ia % CONFIG_BATCH] ,offsetlist[ia % CONFIG_BATCH] & 0x3ffff) ;
+					nr_block = (offsetlist[ia % CONFIG_BATCH] >> 18);
+					debug("check nr_block : %d \n",nr_block);
 					if(!__ib_rdma_read(rcm.rdma,scan_mr,scan_buffer,PAGE_SIZE,
-								(void*)list[nr_block].remote_addr +  ((offsetlist[ia %CONFIG_BATCH] & 0x3ffff) << 12)/* ia * (1UL <<12) */,list[nr_block].rkey,false)){
-						printf("sibal");
-						assert(0);
+								(void*)list[nr_block].remote_addr +  (offsetlist[ia %CONFIG_BATCH] << 12)/* ia * (1UL <<12) */,list[nr_block].rkey,false)){
 						break;
 					}
 
-					if(numlist[ia % CONFIG_BATCH] != atoi(scan_buffer)){
+					//debug("%s\n",(char*)scan_buffer);i
+					if(numlist[ia %(1UL <<18)] != atoi(scan_buffer)){
 						debug("count is %lld\n",count);
-						debug("nr_block: %ld  addr :%x %x \n",nr_block,offsetlist[ia % CONFIG_BATCH], (offsetlist[ia % CONFIG_BATCH] & 0x3ffff) << 12);
+						debug("nr_block: %ld  addr :%x\n",nr_block,offsetlist[ia]);
 						debug("%s\n",(char*)scan_buffer);
 						debug("==============FUCK===============\n");
 						return;
 					}
 					clock_gettime(CLOCK_REALTIME,&read_end);	
 					interval_read_time += ((read_end.tv_sec - read_begin.tv_sec) + (read_end.tv_nsec - read_begin.tv_nsec)/ 1000000000.0);
-					count++;
 				}
 				send_count = batch;
 			}	
 		//		printf("batch_count is %d\n",batch_count++);
 		//	}
 			
-			//printf("batch_count is %ld\n",batch);
+			printf("batch_count is %ld\n",batch);
 		}
 		/*
 		//printf("CHECK MESS[%d] : %s\n",i,lnum);
